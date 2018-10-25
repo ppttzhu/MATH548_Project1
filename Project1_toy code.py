@@ -9,16 +9,17 @@ from scipy.stats import norm
 
 # Binomial tree
 
-def binomial_tree_call_analytic(s: float, k: float, t: float, r: float, sigma: float, n: int) -> float:
+def binomial_tree_analytic(cp: int, s: float, k: float, t: float, r: float, sigma: float, n: int) -> float:
     """
-    Binomial tree method to price call option
+    Binomial tree method to price call and put option
+    :param cp: indicator 1 for call, -1 for put
     :param s: spot price of the underlying asset
     :param k: strike price
     :param t: time to maturity (expressed in years)
     :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
     :param sigma: volatility of returns of the underlying asset
     :param n: height of the binomial tree
-    :return: the price of call option
+    :return: the price of call or put option
     """
 
     delta_t = t / n
@@ -26,17 +27,21 @@ def binomial_tree_call_analytic(s: float, k: float, t: float, r: float, sigma: f
     up = math.exp(sigma * math.sqrt(delta_t))
     down = math.exp(-sigma * math.sqrt(delta_t))
 
+    # risk neutral probability
     q_up = (math.exp(r * delta_t) - down) / (up - down)
     q_down = (up - math.exp(r * delta_t)) / (up - down)
 
-    call = 0
+    npv = 0
+    # price by adding discounted payoff
     for i in range(n + 1):
         payoff = 0
-        if (s * math.pow(up, i) * math.pow(down, n - i)) > k:
-            payoff = (s * math.pow(up, i) * math.pow(down, n - i)) - k
-        call += math.exp(-r * t) * yang_hui_triangle(i, n) * payoff * math.pow(q_up, i) * math.pow(q_down, n - i)
+        if cp == 1:
+            payoff = call_payoff((s * math.pow(up, i) * math.pow(down, n - i)), k)
+        elif cp == -1:
+            payoff = put_payoff((s * math.pow(up, i) * math.pow(down, n - i)), k)
+        npv += math.exp(-r * t) * yang_hui_triangle(i, n) * payoff * math.pow(q_up, i) * math.pow(q_down, n - i)
 
-    return call
+    return npv
 
 
 def binomial_tree_hedging(s: list, x: list, r: float, t: float) -> list:
@@ -58,43 +63,27 @@ def binomial_tree_hedging(s: list, x: list, r: float, t: float) -> list:
 
 # Black–Scholes formula to test in continuous time
 
-def bs_formula_call(s: float, k: float, t: float, r: float, sigma: float) -> float:
+def bs_formula(cp: int, s: float, k: float, t: float, r: float, sigma: float) -> float:
     """
-    Black–Scholes formula to price call option
+    Black–Scholes formula to price call and put option
     https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model
+    :param cp: indicator 1 for call, -1 for put
     :param s: spot price of the underlying asset
     :param k: strike price
     :param t: time to maturity (expressed in years)
     :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
     :param sigma: volatility of returns of the underlying asset
-    :return: the price of call option
+    :return: the price of call or put option
     """
     d1 = bs_formula_d1(s, k, t, r, sigma)
     d2 = bs_formula_d2(s, k, t, r, sigma)
 
-    call = norm.cdf(d1) * s - norm.cdf(d2) * K * math.exp(-r * t)
+    npv = cp * (norm.cdf(cp * d1) * s - norm.cdf(cp * d2) * k * math.exp(-r * t))
 
-    return call
+    return npv
 
 
-def bs_formula_put(s: float, k: float, t: float, r: float, sigma: float) -> float:
-    """
-    Black–Scholes formula to price put option
-    https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model
-    :param s: spot price of the underlying asset
-    :param k: strike price
-    :param t: time to maturity (expressed in years)
-    :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
-    :param sigma: volatility of returns of the underlying asset
-    :return: the price of put option
-    """
-    d1 = bs_formula_d1(s, k, t, r, sigma)
-    d2 = bs_formula_d2(s, k, t, r, sigma)
-
-    put = norm.cdf(-d2) * K * math.exp(-r * t) - norm.cdf(-d1) * s
-
-    return put
-
+# Supporting functions
 
 def bs_formula_d1(s: float, k: float, t: float, r: float, sigma: float) -> float:
     """
@@ -112,9 +101,6 @@ def bs_formula_d2(s: float, k: float, t: float, r: float, sigma: float) -> float
     d2 = (math.log(s / k) + (r - sigma * sigma / 2) * t) / sigma * math.sqrt(t)
 
     return d2
-
-
-# Supporting functions
 
 
 def yang_hui_triangle(n: int, k: int) -> int:
@@ -166,6 +152,34 @@ def volatility_historical_price(s: list, multiplied_factor: int):
     return vol
 
 
+def call_payoff(s: float, k: float) -> float:
+    """
+    Calculate the payoff of call option
+    :param s: spot price
+    :param k: strike price
+    :return: payoff of call option
+    """
+    payoff = 0
+    if s > k:
+        payoff = s - k
+
+    return payoff
+
+
+def put_payoff(s: float, k: float) -> float:
+    """
+    Calculate the payoff of put option
+    :param s: spot price
+    :param k: strike price
+    :return: payoff of put option
+    """
+    payoff = 0
+    if s < k:
+        payoff = k - s
+
+    return payoff
+
+
 # ------------Data Retrieval & Prep------------
 
 # ------------Inputs & Outputs------------
@@ -175,5 +189,7 @@ def volatility_historical_price(s: list, multiplied_factor: int):
 # -------------Graph Solution------------
 
 # -------------Test------------
-hh1 = binomial_tree_call_analytic(10, 10, 1, 0.01, 0.1, 10)
+hh1 = binomial_tree_analytic(-1, 10, 10, 1, 0.01, 0.1, 10)
+hh2 = bs_formula(-1, 10, 10, 1, 0.01, 0.1)
 print(hh1)
+print(hh2)
