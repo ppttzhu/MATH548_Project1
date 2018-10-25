@@ -9,20 +9,22 @@ from scipy.stats import norm
 
 # Binominal tree
 
-def binominal_tree_call_analytic(s: float, u: float, d: float, r: float, step: int) -> float:
+def binominal_tree_call_analytic(s: float, u: float, d: float, r: float, t: float, step: int) -> float:
     """
-    triangle !~~
-    private binominal tree support function to calculate hedging ratio on each node
-    :param s: list of spot price of the underlying asset. Length 2, upward and downward side.
-    :param x: list of value of the contingent claim. Length 2, upward and downward side.
+    Binominal tree method to price call option
+    :param s: spot price of the underlying asset
+    :param u: range of underlying asset price goes up
+    :param d: range of underlying asset price goes down
     :param r: risk free rate (annual rate, expressed in terms of compounding)
-    :param t: time interval of binominal tree (expressed in years)
-    :return: list of hedging strategy of the contingent claim. Length 2, (H0, H1)
+    :param t: time to maturity (expressed in years)
+    :param step: divide t into k branches
+    :return: the price of call option
     """
 
     call = 0
 
     return call
+
 
 def binominal_tree_hedging(s: list, x: list, r: float, t: float) -> list:
     """
@@ -99,7 +101,34 @@ def bs_formula_d2(s: float, k: float, t: float, r: float, sigma: float) -> float
     return d2
 
 
-# Volatility calculation
+# Supporting functions
+
+
+def yang_hui_triangle(n: int, k: int) -> int:
+    """
+    Calculate C(n, k) using Yang Hui's (Pascal's) triangle
+    https://en.wikipedia.org/wiki/Pascal%27s_triangle#Binomial_expansions
+    :param n: select n
+    :param k: total number k
+    :return: the number of way to select n from k
+    """
+
+    # parameter out of range
+    if n > k or k < 0 or n < 0:
+        return 0
+
+    list1 = []
+    for i in range(k + 1):
+        list0 = list1
+        list1 = []
+        for j in range(i + 1):
+            if j == 0 or j == i:
+                list1.append(1)
+            else:
+                list1.append(list0[j - 1] + list0[j])
+
+    return list1[n]
+
 
 def volatility_historical_price(s: list, multiplied_factor: int):
     """
@@ -133,6 +162,5 @@ def volatility_historical_price(s: list, multiplied_factor: int):
 # -------------Graph Solution------------
 
 # -------------Test------------
-s1 = [2, 1, 4, 5, 6]
-hh1 = volatility_historical_price(s1, 250)
+hh1 = yang_hui_triangle(0, 3)
 print(hh1)
