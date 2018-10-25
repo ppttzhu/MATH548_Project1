@@ -7,32 +7,45 @@ from scipy.stats import norm
 
 # ________________FUNCTIONS______________________
 
-# Binominal tree
+# Binomial tree
 
-def binominal_tree_call_analytic(s: float, u: float, d: float, r: float, t: float, step: int) -> float:
+def binomial_tree_call_analytic(s: float, k: float, t: float, r: float, sigma: float, n: int) -> float:
     """
-    Binominal tree method to price call option
+    Binomial tree method to price call option
     :param s: spot price of the underlying asset
-    :param u: range of underlying asset price goes up
-    :param d: range of underlying asset price goes down
-    :param r: risk free rate (annual rate, expressed in terms of compounding)
+    :param k: strike price
     :param t: time to maturity (expressed in years)
-    :param step: divide t into k branches
+    :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
+    :param sigma: volatility of returns of the underlying asset
+    :param n: height of the binomial tree
     :return: the price of call option
     """
 
+    delta_t = t / n
+
+    up = math.exp(sigma * math.sqrt(delta_t))
+    down = math.exp(-sigma * math.sqrt(delta_t))
+
+    q_up = (math.exp(r * delta_t) - down) / (up - down)
+    q_down = (up - math.exp(r * delta_t)) / (up - down)
+
     call = 0
+    for i in range(n + 1):
+        payoff = 0
+        if (s * math.pow(up, i) * math.pow(down, n - i)) > k:
+            payoff = (s * math.pow(up, i) * math.pow(down, n - i)) - k
+        call += math.exp(-r * t) * yang_hui_triangle(i, n) * payoff * math.pow(q_up, i) * math.pow(q_down, n - i)
 
     return call
 
 
-def binominal_tree_hedging(s: list, x: list, r: float, t: float) -> list:
+def binomial_tree_hedging(s: list, x: list, r: float, t: float) -> list:
     """
-    private binominal tree support function to calculate hedging ratio on each node
+    private binomial tree support function to calculate hedging ratio on each node
     :param s: list of spot price of the underlying asset. Length 2, upward and downward side.
     :param x: list of value of the contingent claim. Length 2, upward and downward side.
     :param r: risk free rate (annual rate, expressed in terms of compounding)
-    :param t: time interval of binominal tree (expressed in years)
+    :param t: time interval of binomial tree (expressed in years)
     :return: list of hedging strategy of the contingent claim. Length 2, (H0, H1)
     """
     h1 = (x[1] - x[0]) / (s[1] - s[0])
@@ -73,7 +86,7 @@ def bs_formula_put(s: float, k: float, t: float, r: float, sigma: float) -> floa
     :param t: time to maturity (expressed in years)
     :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
     :param sigma: volatility of returns of the underlying asset
-    :return: the price of call option
+    :return: the price of put option
     """
     d1 = bs_formula_d1(s, k, t, r, sigma)
     d2 = bs_formula_d2(s, k, t, r, sigma)
@@ -162,5 +175,5 @@ def volatility_historical_price(s: list, multiplied_factor: int):
 # -------------Graph Solution------------
 
 # -------------Test------------
-hh1 = yang_hui_triangle(0, 3)
+hh1 = binomial_tree_call_analytic(10, 10, 1, 0.01, 0.1, 10)
 print(hh1)
