@@ -7,7 +7,7 @@ from numpy.linalg import inv  # for matrix algebra
 import math
 
 
-# ________________FUNCTIONS_____________________
+# ________________FUNCTIONS_Test______________________
 
 def dist(x1, y1, x2, y2):
     """
