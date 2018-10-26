@@ -9,9 +9,9 @@ from scipy.stats import norm
 
 # Binomial tree
 
-def binomial_tree_analytic(cp: int, s: float, k: float, t: float, r: float, sigma: float, n: int) -> float:
+def binomial_tree_european_analytic(cp: int, s: float, k: float, t: float, r: float, sigma: float, n: int) -> float:
     """
-    Binomial tree method to price call and put option
+    Binomial tree method to price European call and put option
     :param cp: indicator 1 for call, -1 for put
     :param s: spot price of the underlying asset
     :param k: strike price
@@ -44,6 +44,59 @@ def binomial_tree_analytic(cp: int, s: float, k: float, t: float, r: float, sigm
     return npv
 
 
+def binomial_tree_american(cp: int, s: float, k: float, t: float, r: float, sigma: float, n: int) -> float:
+    """
+    Binomial tree method to price American call and put option
+    :param cp: indicator 1 for call, -1 for put
+    :param s: spot price of the underlying asset
+    :param k: strike price
+    :param t: time to maturity (expressed in years)
+    :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
+    :param sigma: volatility of returns of the underlying asset
+    :param n: height of the binomial tree
+    :return: the price of call or put option
+    """
+
+    delta_t = t / n
+
+    up = math.exp(sigma * math.sqrt(delta_t))
+    down = math.exp(-sigma * math.sqrt(delta_t))
+
+    # risk neutral probability
+    q_up = (math.exp(r * delta_t) - down) / (up - down)
+    q_down = (up - math.exp(r * delta_t)) / (up - down)
+
+    # price by rolling back the payoff step by step
+    z_t_1_discounted = []
+    for time_step in range(n, -1, -1):
+        z_t = []
+        for branch in range(time_step + 1):
+            # calculate intrinsic value
+            payoff = 0
+            s_t = s * math.pow(up, time_step - branch) * math.pow(down, branch)
+            if cp == 1:
+                payoff = call_payoff(s_t, k)
+            elif cp == -1:
+                payoff = put_payoff(s_t, k)
+
+            # calculate max of Y(t-1) and Z*(t-1)
+            if time_step == n:  # last step Z_T = Y_T
+                z_t.append(payoff)
+            else:
+                # American option
+                z_t.append(max(payoff, z_t_1_discounted[branch]))
+                # European option
+                # z_t.append(z_t_1_discounted[branch])
+
+        # discount z_t to z_t_1_discounted
+        z_t_1_discounted = []
+        if time_step != 0:
+            for i in range(time_step):
+                z_t_1_discounted.append(math.exp(-r * delta_t) * (q_up * z_t[i] + q_down * z_t[i + 1]))
+        else:
+            return z_t[0]
+
+
 def binomial_tree_hedging(s: list, x: list, r: float, t: float) -> list:
     """
     private binomial tree support function to calculate hedging ratio on each node
@@ -61,12 +114,34 @@ def binomial_tree_hedging(s: list, x: list, r: float, t: float) -> list:
     return hedging
 
 
-# Black–Scholes formula to test in continuous time
+# Black–Scholes formula for benchmarking European Option
 
 def bs_formula(cp: int, s: float, k: float, t: float, r: float, sigma: float) -> float:
     """
-    Black–Scholes formula to price call and put option
+    Black–Scholes formula to price European call and put option
     https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model
+    :param cp: indicator 1 for call, -1 for put
+    :param s: spot price of the underlying asset
+    :param k: strike price
+    :param t: time to maturity (expressed in years)
+    :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
+    :param sigma: volatility of returns of the underlying asset
+    :return: the price of call or put option
+    """
+    d1 = bs_formula_d1(s, k, t, r, sigma)
+    d2 = bs_formula_d2(s, k, t, r, sigma)
+
+    npv = cp * (norm.cdf(cp * d1) * s - norm.cdf(cp * d2) * k * math.exp(-r * t))
+
+    return npv
+
+
+# Barone-Adesi and Whaley formula for benchmarking American Option
+
+def baw_formula(cp: int, s: float, k: float, t: float, r: float, sigma: float) -> float:
+    """
+    Barone-Adesi and Whaley formula to price American call and put option
+    https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model#American_options
     :param cp: indicator 1 for call, -1 for put
     :param s: spot price of the underlying asset
     :param k: strike price
@@ -189,7 +264,20 @@ def put_payoff(s: float, k: float) -> float:
 # -------------Graph Solution------------
 
 # -------------Test------------
-hh1 = binomial_tree_analytic(-1, 10, 10, 1, 0.01, 0.1, 10)
-hh2 = bs_formula(-1, 10, 10, 1, 0.01, 0.1)
-print(hh1)
-print(hh2)
+cp_test = -1
+s_test = 10
+k_test = 10
+t_test = 1
+r_test = 0.01
+sigma_test = 0.1
+n_test = 100
+
+binomial_tree_european_analytic = binomial_tree_european_analytic(cp_test, s_test, k_test, t_test, r_test, sigma_test, n_test)
+bs_formula = bs_formula(cp_test, s_test, k_test, t_test, r_test, sigma_test)
+binomial_tree_american = binomial_tree_american(cp_test, s_test, k_test, t_test, r_test, sigma_test, n_test)
+baw_formula = baw_formula(cp_test, s_test, k_test, t_test, r_test, sigma_test)
+
+print("The price of European option by binomial tree is %f", binomial_tree_european_analytic)
+print("The price of European option by BS formula is %f", bs_formula)
+print("The price of American option by binomial tree is %f", binomial_tree_american)
+print("The price of American option by BAW formula is %f", baw_formula)
