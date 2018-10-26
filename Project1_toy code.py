@@ -116,7 +116,7 @@ def binomial_tree_hedging(s: list, x: list, r: float, t: float) -> list:
 
 # Black–Scholes formula for benchmarking European Option
 
-def bs_formula(cp: int, s: float, k: float, t: float, r: float, sigma: float) -> float:
+def bs_formula(cp: int, s: float, k: float, t: float, r: float, b: float, sigma: float) -> float:
     """
     Black–Scholes formula to price European call and put option
     https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model
@@ -125,55 +125,101 @@ def bs_formula(cp: int, s: float, k: float, t: float, r: float, sigma: float) ->
     :param k: strike price
     :param t: time to maturity (expressed in years)
     :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
+    :param b: dividend rate of underlying asset (annual rate)
     :param sigma: volatility of returns of the underlying asset
     :return: the price of call or put option
     """
-    d1 = bs_formula_d1(s, k, t, r, sigma)
-    d2 = bs_formula_d2(s, k, t, r, sigma)
+    d1 = bs_formula_d1(s, k, t, r, b, sigma)
+    d2 = bs_formula_d2(s, k, t, r, b, sigma)
 
-    npv = cp * (norm.cdf(cp * d1) * s - norm.cdf(cp * d2) * k * math.exp(-r * t))
+    npv = cp * (norm.cdf(cp * d1) * s * math.exp(-b * t)  - norm.cdf(cp * d2) * k * math.exp(-r * t))
 
     return npv
 
 
 # Barone-Adesi and Whaley formula for benchmarking American Option
 
-def baw_formula(cp: int, s: float, k: float, t: float, r: float, sigma: float) -> float:
+def baw_formula(cp: int, s: float, k: float, t: float, r: float, b: float, sigma: float) -> float:
     """
     Barone-Adesi and Whaley formula to price American call and put option
     https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model#American_options
+    http://finance.bi.no/~bernt/gcc_prog/algoritms_v1/algoritms/node24.html
     :param cp: indicator 1 for call, -1 for put
     :param s: spot price of the underlying asset
     :param k: strike price
     :param t: time to maturity (expressed in years)
     :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
+    :param b: dividend rate of underlying asset (annual rate)
     :param sigma: volatility of returns of the underlying asset
     :return: the price of call or put option
     """
-    d1 = bs_formula_d1(s, k, t, r, sigma)
-    d2 = bs_formula_d2(s, k, t, r, sigma)
+    # set the accuracy requirement for quadratic approximation
+    tolerance = 1.0e-6  # set the accuracy requirement for quadratic approximation
+    max_iterations = 500  # set the max iterations number
 
-    npv = cp * (norm.cdf(cp * d1) * s - norm.cdf(cp * d2) * k * math.exp(-r * t))
+    # to do: add dividend
+    european = bs_formula(cp, s, k, t, r, b, sigma)
+    # If dividend rate is zero and call option, never early exercised
+    if (b - 0.0) < tolerance and cp == 1:
+        return european
 
-    return npv
+    nn = 2.0 * b / (sigma * sigma)
+    m = 2.0 * r / (sigma * sigma)
+    k_cap = 1.0 - math.exp(-r * t)
+    q = (-(nn - 1) + cp * math.sqrt(math.pow((nn - 1), 2.0) + (4 * m / k_cap))) * 0.5
+
+    # seed value from paper
+    qu = 0.5 * ((-nn - 1.0) + cp * math.sqrt(math.pow((nn - 1), 2.0) + 4.0 * m))
+    su = k / (1.0 - 1.0 / qu)
+    h2 = - (b * t + cp * 2.0 * sigma * math.sqrt(t)) * (k / (su - k))
+    s_seed = k + (su - k) * (1.0 - math.exp(h2))
+
+    # Using Newton Raphson algorithm to find critical price Si
+    no_iterations = 0
+    si = s_seed
+    g = 1
+    gprime = 1.0
+
+    while math.fabs(g) > tolerance and math.fabs(gprime) > tolerance and no_iterations < max_iterations and si > 0.0:
+        e = bs_formula(cp, si, k, t, r, b, sigma)
+        d1 = bs_formula_d1(si, k, t, r, b, sigma)
+        g = cp * (si - k - (1.0 / q) * si * (1 - math.exp((b - r) * t) * norm.cdf(cp * d1))) - e
+        gprime = cp * (1.0 - 1.0 / q) * (1.0 - math.exp((b - r) * t) * norm.cdf(cp * d1)) \
+            + (1.0 / q) * math.exp((b - r) * t) * norm.pdf(cp * d1) * (1.0 / (sigma * math.sqrt(t)))
+        si = si - (g / gprime)
+        no_iterations = no_iterations + 1
+
+    if math.fabs(g) > tolerance:
+        s_star = s_seed  # did not converge
+    else:
+        s_star = si
+
+    if s * cp >= s_star * cp:
+        american = (s - k) * cp
+    else:
+        d1 = bs_formula_d1(si, k, t, r, b, sigma)
+        a = (cp * s_star / q) * (1.0 - math.exp((b - r) * t) * norm.cdf(cp * d1))
+        american = european + a * math.pow((s / s_star), q)
+
+    return max(american, european)
 
 
 # Supporting functions
 
-def bs_formula_d1(s: float, k: float, t: float, r: float, sigma: float) -> float:
+def bs_formula_d1(s: float, k: float, t: float, r: float, b: float, sigma: float) -> float:
     """
     private Black–Scholes formula support function
     """
-    d1 = (math.log(s / k) + (r + sigma * sigma / 2) * t) / sigma * math.sqrt(t)
+    d1 = (math.log(s / k) + (r - b + sigma * sigma / 2) * t) / sigma * math.sqrt(t)
 
     return d1
 
 
-def bs_formula_d2(s: float, k: float, t: float, r: float, sigma: float) -> float:
+def bs_formula_d2(s: float, k: float, t: float, r: float, b: float, sigma: float) -> float:
     """
     private Black–Scholes formula support function
     """
-    d2 = (math.log(s / k) + (r - sigma * sigma / 2) * t) / sigma * math.sqrt(t)
+    d2 = (math.log(s / k) + (r - b - sigma * sigma / 2) * t) / sigma * math.sqrt(t)
 
     return d2
 
@@ -265,19 +311,21 @@ def put_payoff(s: float, k: float) -> float:
 
 # -------------Test------------
 cp_test = -1
-s_test = 10
-k_test = 10
-t_test = 1
+s_test = 10.0
+k_test = 10.0
+t_test = 1.0
 r_test = 0.01
+b_test = 0.01
 sigma_test = 0.1
 n_test = 100
 
-binomial_tree_european_analytic = binomial_tree_european_analytic(cp_test, s_test, k_test, t_test, r_test, sigma_test, n_test)
-bs_formula = bs_formula(cp_test, s_test, k_test, t_test, r_test, sigma_test)
-binomial_tree_american = binomial_tree_american(cp_test, s_test, k_test, t_test, r_test, sigma_test, n_test)
-baw_formula = baw_formula(cp_test, s_test, k_test, t_test, r_test, sigma_test)
+binomial_tree_european_analytic11 = binomial_tree_european_analytic(cp_test, s_test, k_test, t_test, r_test, sigma_test,
+                                                                    n_test)
+bs_formula11 = bs_formula(cp_test, s_test, k_test, t_test, r_test, b_test, sigma_test)
+binomial_tree_american11 = binomial_tree_american(cp_test, s_test, k_test, t_test, r_test, sigma_test, n_test)
+baw_formula11 = baw_formula(cp_test, s_test, k_test, t_test, r_test, b_test, sigma_test)
 
-print("The price of European option by binomial tree is %f", binomial_tree_european_analytic)
-print("The price of European option by BS formula is %f", bs_formula)
-print("The price of American option by binomial tree is %f", binomial_tree_american)
-print("The price of American option by BAW formula is %f", baw_formula)
+print("The price of European option by binomial tree is %f", binomial_tree_european_analytic11)
+print("The price of European option by BS formula is %f", bs_formula11)
+print("The price of American option by binomial tree is %f", binomial_tree_american11)
+print("The price of American option by BAW formula is %f", baw_formula11)
