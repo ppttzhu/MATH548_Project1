@@ -12,15 +12,16 @@
 
 from pricingengine import *
 
-cp_test = CallPutType.put
+cp_test = CallPutType.call
 exercise_european = ExerciseType.european
 exercise_american = ExerciseType.american
 s_test = 10.0
 k_test = 10.0
 maturity_test = datetime.datetime.strptime("2019-3-15","%Y-%m-%d")
 pricing_date_test = datetime.datetime.strptime("2018-10-31","%Y-%m-%d")
+# t = 0.3698630136986301
 r_test = 0.02
-b_test = 0.00
+b_test = 0.01
 sigma_test = 0.1
 n_test = 100
 
