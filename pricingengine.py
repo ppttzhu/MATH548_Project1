@@ -21,6 +21,19 @@ class PricingMethod(Enum):
     bs_baw_benchmarking_model = 2
 
 
+class CalibrateMethod(Enum):
+    binomial_tree_model = 1
+    bs_baw_benchmarking_model = 2
+
+
+class CompoundingMethod(Enum):
+    discrete_compounded = 1
+    continuous_compounded = 2
+
+
+COMPOUNDING_METHOD = CompoundingMethod.continuous_compounded
+
+
 class OptionPricingEngine:
     def __init__(self, pricing_date=datetime, pricing_method=PricingMethod, option=Option):
         """
@@ -43,7 +56,7 @@ class OptionPricingEngine:
 
     def npv(self, s: float, r: float, b: float, sigma: float, n: int = 100) -> float:
         """
-        The summary of price models
+        The summary of pricing models
         :param s: spot price of the underlying asset
         :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
         :param b: dividend rate of underlying asset (annual rate)
@@ -51,69 +64,59 @@ class OptionPricingEngine:
         :param n: height of the binomial tree
         :return: the price of option
         """
+        delta_t = self.t / n
+        up = math.exp(sigma * math.sqrt(delta_t))
+        down = math.exp(-sigma * math.sqrt(delta_t))
+
         if self.option.exercise_type is ExerciseType.european:
             if self.pricing_method is PricingMethod.binomial_tree_model:
-                return self.binomial_tree_european_analytic(s, r, sigma, n)
+                return self.binomial_tree_european_analytic(s, r, b, up, down, n)
             elif self.pricing_method is PricingMethod.bs_baw_benchmarking_model:
                 return self.bs_formula(s, r, b, sigma)
         elif self.option.exercise_type is ExerciseType.american:
             if self.pricing_method is PricingMethod.binomial_tree_model:
-                return self.binomial_tree_american_backstepping(s, r, sigma, n)
+                return self.binomial_tree_american_backstep(s, r, b, up, down, n)
             elif self.pricing_method is PricingMethod.bs_baw_benchmarking_model:
                 return self.baw_formula(s, r, b, sigma)
 
         return 0  # Exception
 
-    def binomial_tree_european_analytic(self, s: float, r: float, sigma: float, n: int) -> float:
+    def binomial_tree_european_analytic(self, s: float, r: float, b: float, up: float, down: float, n: int) -> float:
         """
         Binomial tree method to price European call and put option
-        :param s: spot price of the underlying asset
-        :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
-        :param sigma: volatility of returns of the underlying asset
-        :param n: height of the binomial tree
-        :return: the price of option
         """
 
         delta_t = self.t / n
 
-        up = math.exp(sigma * math.sqrt(delta_t))
-        down = math.exp(-sigma * math.sqrt(delta_t))
-
         # risk neutral probability
-        q_up = (math.exp(r * delta_t) - down) / (up - down)
-        q_down = (up - math.exp(r * delta_t)) / (up - down)
+        q_up = (compounding_factor(delta_t, r, COMPOUNDING_METHOD) - down) / (up - down)
+        q_down = (up - compounding_factor(delta_t, r, COMPOUNDING_METHOD)) / (up - down)
 
         npv = 0
         # price by adding discounted payoff
         for i in range(n + 1):
             payoff = 0
             if self.cp == 1:
-                payoff = self.call_payoff((s * math.pow(up, i) * math.pow(down, n - i)), self.option.strike)
+                payoff = self.call_payoff((s * compounding_factor(self.t, - b, COMPOUNDING_METHOD)
+                                           * math.pow(up, i) * math.pow(down, n - i)), self.option.strike)
             elif self.cp == -1:
-                payoff = self.put_payoff((s * math.pow(up, i) * math.pow(down, n - i)), self.option.strike)
-            npv += math.exp(-r * self.t) * yang_hui_triangle(i, n) * payoff * math.pow(q_up, i) * math.pow(q_down,
-                                                                                                           n - i)
+                payoff = self.put_payoff((s * compounding_factor(self.t, - b, COMPOUNDING_METHOD)
+                                          * math.pow(up, i) * math.pow(down, n - i)), self.option.strike)
+            npv += discount_factor(self.t, r, COMPOUNDING_METHOD) * yang_hui_triangle(i, n) \
+                   * payoff * math.pow(q_up, i) * math.pow(q_down, n - i)
 
         return npv
 
-    def binomial_tree_american_backstepping(self, s: float, r: float, sigma: float, n: int) -> float:
+    def binomial_tree_american_backstep(self, s: float, r: float, b: float, up: float, down: float, n: int) -> float:
         """
         Binomial tree method to price American call and put option
-        :param s: spot price of the underlying asset
-        :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
-        :param sigma: volatility of returns of the underlying asset
-        :param n: height of the binomial tree
-        :return: the price of call or put option
         """
 
         delta_t = self.t / n
 
-        up = math.exp(sigma * math.sqrt(delta_t))
-        down = math.exp(-sigma * math.sqrt(delta_t))
-
         # risk neutral probability
-        q_up = (math.exp(r * delta_t) - down) / (up - down)
-        q_down = (up - math.exp(r * delta_t)) / (up - down)
+        q_up = (compounding_factor(delta_t, r, COMPOUNDING_METHOD) - down) / (up - down)
+        q_down = (up - compounding_factor(delta_t, r, COMPOUNDING_METHOD)) / (up - down)
 
         # price by rolling back the payoff step by step
         z_t_1_discounted = []
@@ -122,11 +125,17 @@ class OptionPricingEngine:
             for branch in range(time_step + 1):
                 # calculate intrinsic value
                 payoff = 0
-                s_t = s * math.pow(up, time_step - branch) * math.pow(down, branch)
+                # buyer can choose to exercise before or after dividend
+                s_t_before_div = s * compounding_factor(max((time_step - 1), 0) * delta_t, - b, COMPOUNDING_METHOD) \
+                                 * math.pow(up, time_step - branch) * math.pow(down, branch)
+                s_t_after_div = s * compounding_factor(time_step * delta_t, - b, COMPOUNDING_METHOD) \
+                                * math.pow(up, time_step - branch) * math.pow(down, branch)
                 if self.cp == 1:
-                    payoff = self.call_payoff(s_t, self.option.strike)
+                    payoff = max(self.call_payoff(s_t_before_div, self.option.strike),
+                                 self.call_payoff(s_t_after_div, self.option.strike))
                 elif self.cp == -1:
-                    payoff = self.put_payoff(s_t, self.option.strike)
+                    payoff = max(self.put_payoff(s_t_before_div, self.option.strike),
+                                 self.put_payoff(s_t_after_div, self.option.strike))
 
                 # calculate max of Y(t-1) and Z*(t-1)
                 if time_step == n:  # last step Z_T = Y_T
@@ -141,7 +150,8 @@ class OptionPricingEngine:
             z_t_1_discounted = []
             if time_step != 0:
                 for i in range(time_step):
-                    z_t_1_discounted.append(math.exp(-r * delta_t) * (q_up * z_t[i] + q_down * z_t[i + 1]))
+                    z_t_1_discounted.append(discount_factor(delta_t, r, COMPOUNDING_METHOD)
+                                            * (q_up * z_t[i] + q_down * z_t[i + 1]))
             else:
                 return z_t[0]
 
@@ -151,11 +161,6 @@ class OptionPricingEngine:
         """
         Black–Scholes formula to price European call and put option
         https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model
-        :param s: spot price of the underlying asset
-        :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
-        :param b: dividend rate of underlying asset (annual rate)
-        :param sigma: volatility of returns of the underlying asset
-        :return: the price of call or put option
         """
         d1 = self.bs_formula_d1(s, self.option.strike, self.t, r, b, sigma)
         d2 = self.bs_formula_d2(s, self.option.strike, self.t, r, b, sigma)
@@ -172,11 +177,6 @@ class OptionPricingEngine:
         Barone-Adesi and Whaley formula to price American call and put option
         https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model#American_options
         http://finance.bi.no/~bernt/gcc_prog/algoritms_v1/algoritms/node24.html
-        :param s: spot price of the underlying asset
-        :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
-        :param b: dividend rate of underlying asset (annual rate)
-        :param sigma: volatility of returns of the underlying asset
-        :return: the price of call or put option
         """
         # set the accuracy requirement for quadratic approximation
         tolerance = 1.0e-6  # set the accuracy requirement for quadratic approximation
@@ -215,7 +215,7 @@ class OptionPricingEngine:
             d1 = self.bs_formula_d1(si, k, t, r, b, sigma)
             g = cp * (si - k - (1.0 / q) * si * (1 - math.exp((b - r) * t) * norm.cdf(cp * d1))) - e
             gprime = cp * (1.0 - 1.0 / q) * (1.0 - math.exp((b - r) * t) * norm.cdf(cp * d1)) \
-                + (1.0 / q) * math.exp((b - r) * t) * norm.pdf(cp * d1) * (1.0 / (sigma * math.sqrt(t)))
+                     + (1.0 / q) * math.exp((b - r) * t) * norm.pdf(cp * d1) * (1.0 / (sigma * math.sqrt(t)))
             si = si - (g / gprime)
             no_iterations = no_iterations + 1
 
@@ -320,6 +320,34 @@ class OptionPricingEngine:
         vol = np.std(log_s, ddof=1) * math.sqrt(multiplied_factor)
 
         return vol
+
+
+def compounding_factor(t: float, r: float, compounding=CompoundingMethod) -> float:
+    """
+    Calculate compounding factor based on time, discount rate and compounding method
+    :param t: time
+    :param r: discount rate
+    :param compounding: Enum type indicator: 1 for discrete_compounded, 2 for continuous_compounded
+    :return: compounding factor
+    """
+    if compounding is CompoundingMethod.discrete_compounded:
+        return math.pow(1 + r, t)
+    elif compounding is CompoundingMethod.continuous_compounded:
+        return math.exp(r * t)
+
+    # Exception
+    return 1
+
+
+def discount_factor(t: float, r: float, compounding=CompoundingMethod) -> float:
+    """
+    Calculate discount factor based on time, discount rate and compounding method
+    :param t: time
+    :param r: discount rate
+    :param compounding: Enum type indicator: 1 for discrete_compounded, 2 for continuous_compounded
+    :return: discount factor
+    """
+    return 1 / compounding_factor(t, r, compounding)
 
 
 def yang_hui_triangle(n: int, k: int) -> int:
