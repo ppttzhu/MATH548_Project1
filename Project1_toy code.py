@@ -132,7 +132,7 @@ def bs_formula(cp: int, s: float, k: float, t: float, r: float, b: float, sigma:
     d1 = bs_formula_d1(s, k, t, r, b, sigma)
     d2 = bs_formula_d2(s, k, t, r, b, sigma)
 
-    npv = cp * (norm.cdf(cp * d1) * s * math.exp(-b * t)  - norm.cdf(cp * d2) * k * math.exp(-r * t))
+    npv = cp * (norm.cdf(cp * d1) * s * math.exp(-b * t) - norm.cdf(cp * d2) * k * math.exp(-r * t))
 
     return npv
 
@@ -185,7 +185,7 @@ def baw_formula(cp: int, s: float, k: float, t: float, r: float, b: float, sigma
         d1 = bs_formula_d1(si, k, t, r, b, sigma)
         g = cp * (si - k - (1.0 / q) * si * (1 - math.exp((b - r) * t) * norm.cdf(cp * d1))) - e
         gprime = cp * (1.0 - 1.0 / q) * (1.0 - math.exp((b - r) * t) * norm.cdf(cp * d1)) \
-            + (1.0 / q) * math.exp((b - r) * t) * norm.pdf(cp * d1) * (1.0 / (sigma * math.sqrt(t)))
+                 + (1.0 / q) * math.exp((b - r) * t) * norm.pdf(cp * d1) * (1.0 / (sigma * math.sqrt(t)))
         si = si - (g / gprime)
         no_iterations = no_iterations + 1
 
@@ -210,7 +210,7 @@ def bs_formula_d1(s: float, k: float, t: float, r: float, b: float, sigma: float
     """
     private Black–Scholes formula support function
     """
-    d1 = (math.log(s / k) + (r - b + sigma * sigma / 2) * t) / sigma * math.sqrt(t)
+    d1 = (math.log(s / k) + (r - b + sigma * sigma / 2) * t) / (sigma * math.sqrt(t))
 
     return d1
 
@@ -219,7 +219,7 @@ def bs_formula_d2(s: float, k: float, t: float, r: float, b: float, sigma: float
     """
     private Black–Scholes formula support function
     """
-    d2 = (math.log(s / k) + (r - b - sigma * sigma / 2) * t) / sigma * math.sqrt(t)
+    d2 = (math.log(s / k) + (r - b - sigma * sigma / 2) * t) / (sigma * math.sqrt(t))
 
     return d2
 
@@ -310,12 +310,12 @@ def put_payoff(s: float, k: float) -> float:
 # -------------Graph Solution------------
 
 # -------------Test------------
-cp_test = -1
+cp_test = 1
 s_test = 10.0
 k_test = 10.0
-t_test = 1.0
+t_test = 0.3698630136986301
 r_test = 0.01
-b_test = 0.01
+b_test = 0.00
 sigma_test = 0.1
 n_test = 100
 
