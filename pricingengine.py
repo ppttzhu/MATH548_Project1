@@ -21,17 +21,25 @@ class PricingMethod(Enum):
     bs_baw_benchmarking_model = 2
 
 
-class CalibrateMethod(Enum):
-    binomial_tree_model = 1
-    bs_baw_benchmarking_model = 2
-
-
 class CompoundingMethod(Enum):
     discrete_compounded = 1
     continuous_compounded = 2
 
 
+class TreeAssumption(Enum):
+    ud_1_continuous_compounded = 1
+    p_half = 2
+
+
+class VolatilityCalculation(Enum):
+    estimation = 1
+    calibration = 2
+
+
 COMPOUNDING_METHOD = CompoundingMethod.continuous_compounded
+TREE_ASSUMPTION = TreeAssumption.ud_1_continuous_compounded
+VOLATILITY_CALIBRATION = VolatilityCalculation.estimation
+BUSINESS_DAYS_PER_YEAR = 252
 
 
 class OptionPricingEngine:
@@ -54,43 +62,55 @@ class OptionPricingEngine:
         # t: time to maturity(expressed in years, assume act/365 daycounter)
         self.t = (option.maturity - pricing_date).days / 365
 
-    def npv(self, s: float, r: float, b: float, sigma: float, n: int = 100) -> float:
+    def npv(self, s: float, r: float, b: float, s_history: list = [], n: int = 100) -> float:
         """
         The summary of pricing models
-        :param s: spot price of the underlying asset
+        :param s: spot price of the underlying asset (ex-dividend)
         :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
         :param b: dividend rate of underlying asset (annual rate)
-        :param sigma: volatility of returns of the underlying asset
+        :param s_history: history price of the underlying asset
         :param n: height of the binomial tree
         :return: the price of option
         """
         delta_t = self.t / n
-        up = math.exp(sigma * math.sqrt(delta_t))
-        down = math.exp(-sigma * math.sqrt(delta_t))
+
+        if VOLATILITY_CALIBRATION is VolatilityCalculation.estimation:
+            sigma_log_return = self.volatility_log_return(s_history, BUSINESS_DAYS_PER_YEAR)
+            print(sigma_log_return)
+        elif VOLATILITY_CALIBRATION is VolatilityCalculation.calibration:
+            sigma_log_return = 0.1  # TODO
+
+        if TREE_ASSUMPTION is TreeAssumption.ud_1_continuous_compounded:
+            up_down_p = self.ud_1_continuous_compounded_list(sigma_log_return, r, delta_t)
+        elif TREE_ASSUMPTION is TreeAssumption.p_half:
+            sigma_return = self.volatility_return(s_history, BUSINESS_DAYS_PER_YEAR)
+            miu_return = self.expectation_return(s_history)
+            up_down_p = self.p_half_list(sigma_return, miu_return, delta_t)
 
         if self.option.exercise_type is ExerciseType.european:
             if self.pricing_method is PricingMethod.binomial_tree_model:
-                return self.binomial_tree_european_analytic(s, r, b, up, down, n)
+                return self.binomial_tree_european_analytic(s, r, b, up_down_p, n)
             elif self.pricing_method is PricingMethod.bs_baw_benchmarking_model:
-                return self.bs_formula(s, r, b, sigma)
+                return self.bs_formula(s, r, b, sigma_log_return)
         elif self.option.exercise_type is ExerciseType.american:
             if self.pricing_method is PricingMethod.binomial_tree_model:
-                return self.binomial_tree_american_backstep(s, r, b, up, down, n)
+                return self.binomial_tree_american_backstep(s, r, b, up_down_p, n)
             elif self.pricing_method is PricingMethod.bs_baw_benchmarking_model:
-                return self.baw_formula(s, r, b, sigma)
+                return self.baw_formula(s, r, b, sigma_log_return)
 
         return 0  # Exception
 
-    def binomial_tree_european_analytic(self, s: float, r: float, b: float, up: float, down: float, n: int) -> float:
+    def binomial_tree_european_analytic(self, s: float, r: float, b: float, up_down_p: list, n: int) -> float:
         """
         Binomial tree method to price European call and put option
         """
 
         delta_t = self.t / n
 
-        # risk neutral probability
-        q_up = (compounding_factor(delta_t, r, COMPOUNDING_METHOD) - down) / (up - down)
-        q_down = (up - compounding_factor(delta_t, r, COMPOUNDING_METHOD)) / (up - down)
+        up = up_down_p[0]
+        down = up_down_p[1]
+        q_up = up_down_p[2]
+        q_down = up_down_p[3]
 
         npv = 0
         # price by adding discounted payoff
@@ -107,16 +127,17 @@ class OptionPricingEngine:
 
         return npv
 
-    def binomial_tree_american_backstep(self, s: float, r: float, b: float, up: float, down: float, n: int) -> float:
+    def binomial_tree_american_backstep(self, s: float, r: float, b: float, up_down_p: list, n: int) -> float:
         """
         Binomial tree method to price American call and put option
         """
 
         delta_t = self.t / n
 
-        # risk neutral probability
-        q_up = (compounding_factor(delta_t, r, COMPOUNDING_METHOD) - down) / (up - down)
-        q_down = (up - compounding_factor(delta_t, r, COMPOUNDING_METHOD)) / (up - down)
+        up = up_down_p[0]
+        down = up_down_p[1]
+        q_up = up_down_p[2]
+        q_down = up_down_p[3]
 
         # price by rolling back the payoff step by step
         z_t_1_discounted = []
@@ -253,6 +274,42 @@ class OptionPricingEngine:
         return hedging
 
     @staticmethod
+    def ud_1_continuous_compounded_list(sigma: float, r: float, delta_t: float) -> list:
+        """
+        calculate up and down range and probability for ud_1_continuous_compounded tree assumption
+        :param sigma: standard deviation of logged stock return
+        :param r: risk free rate (annual rate, expressed in terms of compounding)
+        :param delta_t: time interval of one branch (expressed in years)
+        :return: up and down range and probability
+        """
+        up = math.exp(sigma * math.sqrt(delta_t))
+        down = math.exp(-sigma * math.sqrt(delta_t))
+
+        # risk neutral probability
+        q_up = (compounding_factor(delta_t, r, COMPOUNDING_METHOD) - down) / (up - down)
+        q_down = (up - compounding_factor(delta_t, r, COMPOUNDING_METHOD)) / (up - down)
+
+        return [up, down, q_up, q_down]
+
+    @staticmethod
+    def p_half_list(sigma: float, miu: float, delta_t: float) -> list:
+        """
+        calculate up and down range and probability for p_half tree assumption
+        :param sigma: standard deviation of stock return (annualized)
+        :param miu: expectation of stock return (annualized)
+        :param delta_t: time interval of one branch (expressed in years)
+        :return: up and down range and probability
+        """
+        up = 1 + miu * delta_t + sigma * math.sqrt(delta_t)
+        down = 1 + miu * delta_t - sigma * math.sqrt(delta_t)
+
+        # risk neutral probability
+        q_up = 1 / 2
+        q_down = 1 / 2
+
+        return [up, down, q_up, q_down]
+
+    @staticmethod
     def bs_formula_d1(s: float, k: float, t: float, r: float, b: float, sigma: float) -> float:
         """
         private Black–Scholes formula support function
@@ -299,13 +356,13 @@ class OptionPricingEngine:
         return payoff
 
     @staticmethod
-    def volatility_historical_price(s: list, multiplied_factor: int):
+    def volatility_log_return(s: list, multiplied_factor: int):
         """
-        private support function to calculate volatility for underlying asset
+        private support function to calculate volatility of log return
         :param s: list of historical spot price of the underlying asset.
         :param multiplied_factor: number of business days for the corresponding frequency of historical data.
         E.g. for daily, 250 or 260 or 252. For weekly, 52.
-        :return: annualized volatility
+        :return: annualized volatility of log return
         """
 
         # insufficient length of data
@@ -313,13 +370,55 @@ class OptionPricingEngine:
             return 0
 
         # logarithm of historical price
-        log_s = []
+        log_s_return = []
         for i in range(1, len(s)):
-            log_s.append(math.log(s[i - 1] / s[i]))
+            log_s_return.append(math.log(s[i] / s[i - 1]))
 
-        vol = np.std(log_s, ddof=1) * math.sqrt(multiplied_factor)
+        vol = np.std(log_s_return, ddof=1) * math.sqrt(multiplied_factor)
 
         return vol
+
+    @staticmethod
+    def volatility_return(s: list, multiplied_factor: int):
+        """
+        private support function to calculate volatility of return
+        :param s: list of historical spot price of the underlying asset.
+        :param multiplied_factor: number of business days for the corresponding frequency of historical data.
+        E.g. for daily, 250 or 260 or 252. For weekly, 52.
+        :return: annualized volatility of return
+        """
+
+        # insufficient length of data
+        if len(s) < 2:
+            return 0
+
+        s_return = []
+        for i in range(1, len(s)):
+            s_return.append(s[i] / s[i - 1])
+
+        vol = np.std(s_return, ddof=1) * math.sqrt(multiplied_factor)
+
+        return vol
+
+    @staticmethod
+    def expectation_return(s: list):
+        """
+        private support function to calculate expectation of return
+        :param s: list of historical spot price of the underlying asset.
+        :return: expectation of return
+        """
+
+        # insufficient length of data
+        if len(s) < 2:
+            return 0
+
+        s_return = []
+        for i in range(1, len(s)):
+            s_return.append(s[i] / s[i - 1])
+
+        exp = np.mean(s_return)
+
+        return exp
 
 
 def compounding_factor(t: float, r: float, compounding=CompoundingMethod) -> float:
@@ -374,3 +473,27 @@ def yang_hui_triangle(n: int, k: int) -> int:
                 list1.append(list0[j - 1] + list0[j])
 
     return list1[n]
+
+
+def interpol(x_vector: list, y_vector: list, point: float) -> float:
+    """
+    linear interpolation method
+    :param x_vector: x data set
+    :param y_vector: f(x) data set
+    :param point: sample object
+    :return: f(point)
+    """
+    num = len(y_vector)
+    if point <= x_vector[0]:
+        # for smaller value set equal to smallest value in Y vector
+        return y_vector[0]
+    else:
+        i = 1
+        # Find out where point is
+        while x_vector[i] < point:
+            i = i + 1
+            if i > num:
+                # for larger values set equal to largest value in Y vector
+                return y_vector(num)
+        weight = (x_vector(i) - point) / (x_vector(i) - x_vector(i - 1))
+        return weight * y_vector(i - 1) + (1 - weight) * y_vector(i)
