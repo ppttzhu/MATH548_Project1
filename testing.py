@@ -28,12 +28,20 @@ n_test = 100
 
 option_european = Option("000001.SZ", k_test, maturity_test, cp_test, exercise_european)
 option_american = Option("000001.SZ", k_test, maturity_test, cp_test, exercise_american)
+
+option_european1 = Option("000001.SZ", 11, maturity_test, cp_test, exercise_european)
+option_european2 = Option("000001.SZ", 9, maturity_test, cp_test, exercise_european)
+option_european3 = Option("000001.SZ", 10.5, maturity_test, cp_test, exercise_european)
+
+options_test = [option_european1, option_european2, option_european3]
+market_price = [0.5, 2, 1]
+
 pricing_engine_european_bi = OptionPricingEngine(pricing_date_test, PricingMethod.binomial_tree_model, option_european)
 pricing_engine_american_bi = OptionPricingEngine(pricing_date_test, PricingMethod.binomial_tree_model, option_american)
 pricing_engine_european_bs = OptionPricingEngine(pricing_date_test, PricingMethod.bs_baw_benchmarking_model, option_european)
 pricing_engine_american_baw = OptionPricingEngine(pricing_date_test, PricingMethod.bs_baw_benchmarking_model, option_american)
 
-print("The price of European option by binomial tree is %f" % pricing_engine_european_bi.npv(s_test, r_test, b_test, s_history_test, n_test))
-print("The price of European option by BS formula is %f" % pricing_engine_european_bs.npv(s_test, r_test, b_test, s_history_test, n_test))
-print("The price of American option by binomial tree is %f" % pricing_engine_american_bi.npv(s_test, r_test, b_test, s_history_test, n_test))
-print("The price of American option by BAW formula is %f" % pricing_engine_american_baw.npv(s_test, r_test, b_test, s_history_test, n_test))
+print("The price of European option by binomial tree is %f" % pricing_engine_european_bi.npv(s_test, r_test, b_test, s_history_test, n_test, options_test, market_price))
+print("The price of European option by BS formula is %f" % pricing_engine_european_bs.npv(s_test, r_test, b_test, s_history_test, n_test, options_test, market_price))
+print("The price of American option by binomial tree is %f" % pricing_engine_american_bi.npv(s_test, r_test, b_test, s_history_test, n_test, options_test, market_price))
+print("The price of American option by BAW formula is %f" % pricing_engine_american_baw.npv(s_test, r_test, b_test, s_history_test, n_test, options_test, market_price))
