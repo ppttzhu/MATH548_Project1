@@ -39,3 +39,15 @@ class Option:
         self.maturity = maturity
         self.call_put_type = call_put_type
         self.exercise_type = exercise_type
+
+
+class Forward:
+    def __init__(self, underlying: str, strike: float, maturity=datetime):
+        """
+        :param underlying: Name of the underlying security
+        :param strike: Strike price of forward
+        :param maturity: Maturity date of forward
+        """
+        self.underlying = underlying
+        self.strike = strike
+        self.maturity = maturity
