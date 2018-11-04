@@ -45,3 +45,7 @@ print("The price of European option by binomial tree is %f" % pricing_engine_eur
 print("The price of European option by BS formula is %f" % pricing_engine_european_bs.npv(s_test, r_test, b_test, s_history_test, n_test, options_test, market_price))
 print("The price of American option by binomial tree is %f" % pricing_engine_american_bi.npv(s_test, r_test, b_test, s_history_test, n_test, options_test, market_price))
 print("The price of American option by BAW formula is %f" % pricing_engine_american_baw.npv(s_test, r_test, b_test, s_history_test, n_test, options_test, market_price))
+
+forward = Forward("000001.SZ", k_test, maturity_test)
+pricing_engine_forward = ForwardPricingEngine(pricing_date_test, forward)
+print("The price of forward is %f" % pricing_engine_forward.npv(s_test, r_test, b_test))
