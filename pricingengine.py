@@ -39,8 +39,8 @@ class VolatilityCalculation(Enum):
 
 
 COMPOUNDING_METHOD = CompoundingMethod.continuous_compounded
-TREE_ASSUMPTION = TreeAssumption.ud_calibrated
-VOLATILITY_CALIBRATION = VolatilityCalculation.calibration
+TREE_ASSUMPTION = TreeAssumption.ud_1
+VOLATILITY_CALIBRATION = VolatilityCalculation.estimation
 BUSINESS_DAYS_PER_YEAR = 252
 
 
@@ -86,12 +86,13 @@ class OptionPricingEngine:
                 (self.pricing_method is PricingMethod.binomial_tree_model and TREE_ASSUMPTION is TreeAssumption.ud_1):
             if VOLATILITY_CALIBRATION is VolatilityCalculation.estimation:
                 sigma_log_return = self.volatility_log_return(s_history, BUSINESS_DAYS_PER_YEAR)
-                print(sigma_log_return)
+                # print(sigma_log_return)
             elif VOLATILITY_CALIBRATION is VolatilityCalculation.calibration:
                 if sigma_cal == 0:  # not calibrated
                     guess = 0.1
+                    sigma_bounds = ((0, 10),)
                     optimize_result = optimize.minimize(self.volatility_optimizer, guess,
-                                                        args=(options, market_price, s, r, b, n))
+                                                        args=(options, market_price, s, r, b, n), bounds=sigma_bounds)
                     # print(optimize_result)
                     sigma_log_return = optimize_result.x
                 else:
@@ -289,7 +290,7 @@ class OptionPricingEngine:
     def volatility_optimizer(self, sigma: float, options: list, market_price: list, s: float, r: float, b: float,
                              n: int) -> float:
         """
-        Calculate expectation of return
+        Find the optimal volatility to minimize the difference between model price and market price
         :param sigma: the sigma parameter to be calibrated
         :param options: list of options objects for calibration
         :param market_price: the market prices of options
@@ -310,7 +311,7 @@ class OptionPricingEngine:
     def up_down_optimizer(self, up_down: list, options: list, market_price: list, s: float, r: float, b: float,
                           n: int) -> float:
         """
-        Calculate expectation of return
+        Find the optimal up and down range to minimize the difference between model price and market price
         :param up_down: the up and down parameter to be calibrated
         :param options: list of options objects for calibration
         :param market_price: the market prices of options
@@ -510,6 +511,31 @@ class OptionPricingEngine:
         exp = np.mean(s_return)
 
         return exp
+
+
+class ForwardPricingEngine:
+    def __init__(self, pricing_date=datetime, forward=Forward):
+        """
+        :param pricing_date: Date to calculate fair value
+        :param forward: Forward object
+        :return:
+        """
+        self.forward = forward
+        self.pricing_date = pricing_date
+
+        # t: time to maturity(expressed in years, assume act/365 daycounter)
+        self.t = (forward.maturity - pricing_date).days / 365
+
+    def npv(self, s: float, r: float, b: float) -> float:
+        """
+        Calculate the fair value of forward
+        :param s: spot price of the underlying asset (ex-dividend)
+        :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
+        :param b: dividend rate of underlying asset (annual rate)
+        :return: the price of forward
+        """
+
+        return s - self.forward.strike * discount_factor(self.t, (r - b), COMPOUNDING_METHOD)
 
 
 def compounding_factor(t: float, r: float, compounding=CompoundingMethod) -> float:
