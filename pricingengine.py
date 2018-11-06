@@ -41,8 +41,9 @@ class VolatilityCalculation(Enum):
 PRICING_METHOD = PricingMethod.binomial_tree_model
 COMPOUNDING_METHOD = CompoundingMethod.continuous_compounded
 TREE_ASSUMPTION = TreeAssumption.ud_1
-VOLATILITY_CALIBRATION = VolatilityCalculation.estimation
+VOLATILITY_CALIBRATION = VolatilityCalculation.calibration
 BUSINESS_DAYS_PER_YEAR = 252
+BINOMIAL_TREE_STEP = 10
 
 
 class OptionPricingEngine:
@@ -64,50 +65,41 @@ class OptionPricingEngine:
         # t: time to maturity(expressed in years, assume act/365 daycounter)
         self.t = (option.maturity - pricing_date).days / 365
 
-    def npv(self, s: float, r_curve: list, b: float, s_history: list = [], n: int = 100, options: list = [],
-            market_price: list = [], sigma_cal: float = 0, up_down_cal: list = []) -> list:
+    def calibrate(self, s: float, r_curve: list, b: float, s_history: list = [], options: list = [],
+                  market_price: list = []) -> list:
         """
-        The summary of pricing models
+        Calibrate pricing models
         :param s: spot price of the underlying asset (ex-dividend)
         :param r_curve: risk free rate curve(annual rate, expressed in terms of continuous compounding)
         :param b: dividend rate of underlying asset (annual rate)
         :param s_history: history price of the underlying asset
-        :param n: height of the binomial tree
         :param options: list of options objects for calibration
         :param market_price: the market price of options
-        :param sigma_cal: calibrated sigma, only for optimiser
-        :param up_down_cal: calibrated up and down, only for optimiser
-        :return: the price of option, if binomial model is selected, the output is a list
-        [npv, h0_tree, h1_tree, s_tree, bond_tree, option_tree]
+        :return: a list of calibrated parameters: [sigma_log_return, up_down]
         """
 
         # Interpolate risk free rate
         r = interpol(r_curve[0], r_curve[1], self.t)
 
-        delta_t = self.t / n
+        delta_t = self.t / BINOMIAL_TREE_STEP
 
         # Calculate volatility
-
         if PRICING_METHOD is PricingMethod.bs_baw_benchmarking_model or \
                 (PRICING_METHOD is PricingMethod.binomial_tree_model and TREE_ASSUMPTION is TreeAssumption.ud_1):
             if VOLATILITY_CALIBRATION is VolatilityCalculation.estimation:
                 sigma_log_return = self.volatility_log_return(s_history, BUSINESS_DAYS_PER_YEAR)
-                # print(sigma_log_return)
             elif VOLATILITY_CALIBRATION is VolatilityCalculation.calibration:
-                if sigma_cal == 0:  # not calibrated
-                    guess = 0.1
-                    sigma_bounds = ((0, 10),)
-                    optimize_result = optimize.minimize(self.volatility_optimizer, guess,
-                                                        args=(options, market_price, s, r, b, n), bounds=sigma_bounds)
-                    # print(optimize_result)
-                    sigma_log_return = optimize_result.x
-                else:
-                    sigma_log_return = sigma_cal
+                guess = 0.1
+                sigma_bounds = ((0, 10),)
+                optimize_result = optimize.minimize(self.volatility_optimizer, guess,
+                                                    args=(options, market_price, s, r_curve, b, BINOMIAL_TREE_STEP),
+                                                    bounds=sigma_bounds)
+                sigma_log_return = optimize_result.x
+        else:
+            sigma_log_return = []
 
+        # Calculate up and down range
         if PRICING_METHOD is PricingMethod.binomial_tree_model:
-
-            # Calculate up and down range
-
             if TREE_ASSUMPTION is TreeAssumption.ud_1:
                 up_down_p = self.ud_1_list(sigma_log_return, r, delta_t)
             elif TREE_ASSUMPTION is TreeAssumption.p_half:
@@ -115,25 +107,43 @@ class OptionPricingEngine:
                 miu_return = self.expectation_return(s_history)
                 up_down_p = self.p_half_list(sigma_return, miu_return, delta_t)
             elif TREE_ASSUMPTION is TreeAssumption.ud_calibrated:
-                if not up_down_cal:  # not calibrated
-                    guess = [math.exp(r * delta_t), math.exp(-r * delta_t)]
-                    ud_bounds = ((1, 10), (0, 1))  # bound for up is (1, 10) and bound for down is (0, 1)
-                    optimize_result = optimize.minimize(self.up_down_optimizer, guess,
-                                                        args=(options, market_price, s, r, b, n), bounds=ud_bounds)
-                    # print(optimize_result)
-                    up_down = optimize_result.x
-                else:
-                    up_down = up_down_cal
-                up_down_p = self.ud_calibrated_list(up_down[0], up_down[1], r, delta_t)
 
-            # Calculate npv and hedging strategy
-            return self.binomial_tree_backstep(s, r, b, up_down_p, n)
+                guess = [math.exp(r * delta_t), math.exp(-r * delta_t)]
+                ud_bounds = ((1, 10), (0, 1))  # bound for up is (1, 10) and bound for down is (0, 1)
+                optimize_result = optimize.minimize(self.up_down_optimizer, guess,
+                                                    args=(options, market_price, s, r_curve, b, BINOMIAL_TREE_STEP),
+                                                    bounds=ud_bounds)
+                # print(optimize_result)
+                up_down = optimize_result.x
+                up_down_p = self.ud_calibrated_list(up_down[0], up_down[1], r, delta_t)
+        else:
+            up_down_p = []
+
+        return [sigma_log_return, up_down_p]
+
+    def npv(self, s: float, r_curve: list, b: float, sigma: float = 0, up_down_p: list = []) -> list:
+        """
+        The summary of pricing models
+        :param s: spot price of the underlying asset (ex-dividend)
+        :param r_curve: risk free rate curve(annual rate, expressed in terms of continuous compounding)
+        :param b: dividend rate of underlying asset (annual rate)
+        :param sigma: calibrated sigma
+        :param up_down_p: calibrated up and down
+        :return: if binomial model: the output is: [npv, h0_tree, h1_tree, s_tree, bond_tree, option_tree], else, [npv]
+        """
+
+        # Interpolate risk free rate
+        r = interpol(r_curve[0], r_curve[1], self.t)
+
+        if PRICING_METHOD is PricingMethod.binomial_tree_model:
+            return self.binomial_tree_backstep(s, r, b, up_down_p, BINOMIAL_TREE_STEP)
 
         elif PRICING_METHOD is PricingMethod.bs_baw_benchmarking_model:
+            # For benchmark
             if self.option.exercise_type is ExerciseType.european:
-                return [self.bs_formula(s, r, b, sigma_log_return)]
+                return [self.bs_formula(s, r, b, sigma)]
             elif self.option.exercise_type is ExerciseType.american:
-                return [self.baw_formula(s, r, b, sigma_log_return)]
+                return [self.baw_formula(s, r, b, sigma)]
 
         print('Error: Method not supported.')
         return -1
@@ -333,46 +343,34 @@ class OptionPricingEngine:
 
     # Optimizers for calibration
 
-    def volatility_optimizer(self, sigma: float, options: list, market_price: list, s: float, r: float, b: float,
+    def volatility_optimizer(self, sigma: float, options: list, market_price: list, s: float, r_curve: list, b: float,
                              n: int) -> float:
         """
-        Find the optimal volatility to minimize the difference between model price and market price
-        :param sigma: the sigma parameter to be calibrated
-        :param options: list of options objects for calibration
-        :param market_price: the market prices of options
-        :param s: spot price of the underlying asset (ex-dividend)
-        :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
-        :param b: dividend rate of underlying asset (annual rate)
-        :param n: height of the binomial tree
-        :return: squared sum of error between market prices and model results
+        Find the optimal volatility to minimize the squared sum of error between model price and market price
         """
 
         ess = 0
         for i in range(len(options)):
-            pricing_engine = OptionPricingEngine(self.pricing_date, PRICING_METHOD, options[i])
-            model_price = pricing_engine.npv(s, r, b, [], n, [], [], sigma)
-            ess += (model_price - market_price[i]) ** 2
+            pricing_engine = OptionPricingEngine(self.pricing_date, options[i])
+            model_price = pricing_engine.npv(s, r_curve, b, sigma, [])
+            ess += math.pow(model_price[0] - market_price[i], 2)
         return ess
 
-    def up_down_optimizer(self, up_down: list, options: list, market_price: list, s: float, r: float, b: float,
+    def up_down_optimizer(self, up_down_q: list, options: list, market_price: list, s: float, r_curve: list, b: float,
                           n: int) -> float:
         """
-        Find the optimal up and down range to minimize the difference between model price and market price
-        :param up_down: the up and down parameter to be calibrated
-        :param options: list of options objects for calibration
-        :param market_price: the market prices of options
-        :param s: spot price of the underlying asset (ex-dividend)
-        :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
-        :param b: dividend rate of underlying asset (annual rate)
-        :param n: height of the binomial tree
-        :return: squared sum of error between market prices and model results
+        Find the optimal up and down range to minimize the squared sum of error between model price and market price
         """
-        up, down = up_down
+        up, down = up_down_q
+        r = interpol(r_curve[0], r_curve[1], self.t)
+        delta_t = self.t / BINOMIAL_TREE_STEP
+        up_down_p = self.ud_calibrated_list(up, down, r, delta_t)
+
         ess = 0
         for i in range(len(options)):
-            pricing_engine = OptionPricingEngine(self.pricing_date, PRICING_METHOD, options[i])
-            model_price = pricing_engine.npv(s, r, b, [], n, [], [], 0, [up, down])
-            ess += (model_price - market_price[i]) ** 2
+            pricing_engine = OptionPricingEngine(self.pricing_date, options[i])
+            model_price = pricing_engine.npv(s, r_curve, b, 0, up_down_p)
+            ess += math.pow(model_price[0] - market_price[i], 2)
         return ess
 
     # Supporting static functions
