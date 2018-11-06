@@ -38,6 +38,7 @@ class VolatilityCalculation(Enum):
     calibration = 2
 
 
+PRICING_METHOD = PricingMethod.binomial_tree_model
 COMPOUNDING_METHOD = CompoundingMethod.continuous_compounded
 TREE_ASSUMPTION = TreeAssumption.ud_1
 VOLATILITY_CALIBRATION = VolatilityCalculation.estimation
@@ -45,16 +46,14 @@ BUSINESS_DAYS_PER_YEAR = 252
 
 
 class OptionPricingEngine:
-    def __init__(self, pricing_date=datetime, pricing_method=PricingMethod, option=Option):
+    def __init__(self, pricing_date=datetime, option=Option):
         """
         :param pricing_date: Date to calculate fair value
-        :param pricing_method: Enum type indicator: 1 for binomial_tree_model, 2 for bs_baw_benchmarking_model
         :param option: Option object
         :return:
         """
         self.option = option
         self.pricing_date = pricing_date
-        self.pricing_method = pricing_method
 
         # cp: indicator 1 for call, -1 for put
         if option.call_put_type is CallPutType.call:
@@ -65,12 +64,12 @@ class OptionPricingEngine:
         # t: time to maturity(expressed in years, assume act/365 daycounter)
         self.t = (option.maturity - pricing_date).days / 365
 
-    def npv(self, s: float, r: float, b: float, s_history: list = [], n: int = 100, options: list = [],
-            market_price: list = [], sigma_cal: float = 0, up_down_cal: list = []) -> float:
+    def npv(self, s: float, r_curve: list, b: float, s_history: list = [], n: int = 100, options: list = [],
+            market_price: list = [], sigma_cal: float = 0, up_down_cal: list = []) -> list:
         """
         The summary of pricing models
         :param s: spot price of the underlying asset (ex-dividend)
-        :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
+        :param r_curve: risk free rate curve(annual rate, expressed in terms of continuous compounding)
         :param b: dividend rate of underlying asset (annual rate)
         :param s_history: history price of the underlying asset
         :param n: height of the binomial tree
@@ -78,12 +77,19 @@ class OptionPricingEngine:
         :param market_price: the market price of options
         :param sigma_cal: calibrated sigma, only for optimiser
         :param up_down_cal: calibrated up and down, only for optimiser
-        :return: the price of option
+        :return: the price of option, if binomial model is selected, the output is a list
+        [npv, h0_tree, h1_tree, s_tree, bond_tree, option_tree]
         """
+
+        # Interpolate risk free rate
+        r = interpol(r_curve[0], r_curve[1], self.t)
+
         delta_t = self.t / n
 
-        if self.pricing_method is PricingMethod.bs_baw_benchmarking_model or \
-                (self.pricing_method is PricingMethod.binomial_tree_model and TREE_ASSUMPTION is TreeAssumption.ud_1):
+        # Calculate volatility
+
+        if PRICING_METHOD is PricingMethod.bs_baw_benchmarking_model or \
+                (PRICING_METHOD is PricingMethod.binomial_tree_model and TREE_ASSUMPTION is TreeAssumption.ud_1):
             if VOLATILITY_CALIBRATION is VolatilityCalculation.estimation:
                 sigma_log_return = self.volatility_log_return(s_history, BUSINESS_DAYS_PER_YEAR)
                 # print(sigma_log_return)
@@ -98,7 +104,9 @@ class OptionPricingEngine:
                 else:
                     sigma_log_return = sigma_cal
 
-        if self.pricing_method is PricingMethod.binomial_tree_model:
+        if PRICING_METHOD is PricingMethod.binomial_tree_model:
+
+            # Calculate up and down range
 
             if TREE_ASSUMPTION is TreeAssumption.ud_1:
                 up_down_p = self.ud_1_list(sigma_log_return, r, delta_t)
@@ -118,22 +126,22 @@ class OptionPricingEngine:
                     up_down = up_down_cal
                 up_down_p = self.ud_calibrated_list(up_down[0], up_down[1], r, delta_t)
 
-            if self.option.exercise_type is ExerciseType.european:
-                return self.binomial_tree_european_analytic(s, r, b, up_down_p, n)
-            elif self.option.exercise_type is ExerciseType.american:
-                return self.binomial_tree_american_backstep(s, r, b, up_down_p, n)
+            # Calculate npv and hedging strategy
+            return self.binomial_tree_backstep(s, r, b, up_down_p, n)
 
-        elif self.pricing_method is PricingMethod.bs_baw_benchmarking_model:
+        elif PRICING_METHOD is PricingMethod.bs_baw_benchmarking_model:
             if self.option.exercise_type is ExerciseType.european:
-                return self.bs_formula(s, r, b, sigma_log_return)
+                return [self.bs_formula(s, r, b, sigma_log_return)]
             elif self.option.exercise_type is ExerciseType.american:
-                return self.baw_formula(s, r, b, sigma_log_return)
+                return [self.baw_formula(s, r, b, sigma_log_return)]
 
-        return 0  # Exception
+        print('Error: Method not supported.')
+        return -1
 
     def binomial_tree_european_analytic(self, s: float, r: float, b: float, up_down_p: list, n: int) -> float:
         """
-        Binomial tree method to price European call and put option
+        Binomial tree method to price European call and put option (Just for benchmarking)
+        We can get same result with binomial_tree_backstep function
         """
 
         delta_t = self.t / n
@@ -158,9 +166,9 @@ class OptionPricingEngine:
 
         return npv
 
-    def binomial_tree_american_backstep(self, s: float, r: float, b: float, up_down_p: list, n: int) -> float:
+    def binomial_tree_backstep(self, s: float, r: float, b: float, up_down_p: list, n: int) -> list:
         """
-        Binomial tree method to price American call and put option
+        Binomial tree method to price American/European, call/put option step by step and derive hedging strategy
         """
 
         delta_t = self.t / n
@@ -170,42 +178,80 @@ class OptionPricingEngine:
         q_up = up_down_p[2]
         q_down = up_down_p[3]
 
+        h0_tree = []
+        h1_tree = []
+        s_tree = []
+        bond_tree = []
+        option_tree = []
+
         # price by rolling back the payoff step by step
         z_t_1_discounted = []
         for time_step in range(n, -1, -1):
             z_t = []
+            s_t_list = []
+            b_t_list = []
+            h0_t_list = []
+            h1_t_list = []
             for branch in range(time_step + 1):
                 # calculate intrinsic value
                 payoff = 0
-                # buyer can choose to exercise before or after dividend
-                s_t_before_div = s * compounding_factor(max((time_step - 1), 0) * delta_t, - b, COMPOUNDING_METHOD) \
+
+                s_t = s * compounding_factor(time_step * delta_t, - b, COMPOUNDING_METHOD) \
+                      * math.pow(up, time_step - branch) * math.pow(down, branch)
+
+                s_t_list.append(s_t)
+                b_t_list.append(compounding_factor(time_step * delta_t, r, COMPOUNDING_METHOD))
+
+                if self.option.exercise_type is ExerciseType.american:
+                    # American option: buyer can choose to exercise before or after dividend
+                    s_t_ex_div = s * compounding_factor(max((time_step - 1), 0) * delta_t, - b, COMPOUNDING_METHOD) \
                                  * math.pow(up, time_step - branch) * math.pow(down, branch)
-                s_t_after_div = s * compounding_factor(time_step * delta_t, - b, COMPOUNDING_METHOD) \
-                                * math.pow(up, time_step - branch) * math.pow(down, branch)
+                else:
+                    s_t_ex_div = s_t
+
                 if self.cp == 1:
-                    payoff = max(self.call_payoff(s_t_before_div, self.option.strike),
-                                 self.call_payoff(s_t_after_div, self.option.strike))
+                    payoff = max(self.call_payoff(s_t_ex_div, self.option.strike),
+                                 self.call_payoff(s_t, self.option.strike))
                 elif self.cp == -1:
-                    payoff = max(self.put_payoff(s_t_before_div, self.option.strike),
-                                 self.put_payoff(s_t_after_div, self.option.strike))
+                    payoff = max(self.put_payoff(s_t_ex_div, self.option.strike),
+                                 self.put_payoff(s_t, self.option.strike))
 
                 # calculate max of Y(t-1) and Z*(t-1)
                 if time_step == n:  # last step Z_T = Y_T
                     z_t.append(payoff)
                 else:
-                    # American option
-                    z_t.append(max(payoff, z_t_1_discounted[branch]))
-                    # European option
-                    # z_t.append(z_t_1_discounted[branch])
+                    if self.option.exercise_type is ExerciseType.american:
+                        # American option
+                        z_t.append(max(payoff, z_t_1_discounted[branch]))
+                    else:
+                        # European option
+                        z_t.append(z_t_1_discounted[branch])
 
-            # discount z_t to z_t_1_discounted
+            # Calculate hedging strategy
+            if time_step != 0:
+                for branch in range(time_step):
+                    s_up_down = [s_t_list[branch], s_t_list[branch + 1]]
+                    x_up_down = [z_t[branch], z_t[branch + 1]]
+                    hedging = self.binomial_tree_hedging(s_up_down, x_up_down, r, delta_t)
+                    h0_t_list.append(hedging[0])
+                    h1_t_list.append(hedging[1])
+                h0_tree.insert(0, h0_t_list)
+                h1_tree.insert(0, h1_t_list)
+
+            s_tree.insert(0, s_t_list)
+            bond_tree.insert(0, b_t_list)
+            option_tree.insert(0, z_t)
+
+            # Discount z_t to z_t_1_discounted
             z_t_1_discounted = []
             if time_step != 0:
                 for i in range(time_step):
                     z_t_1_discounted.append(discount_factor(delta_t, r, COMPOUNDING_METHOD)
                                             * (q_up * z_t[i] + q_down * z_t[i + 1]))
             else:
-                return z_t[0]
+                npv = z_t[0]
+
+        return [npv, h0_tree, h1_tree, s_tree, bond_tree, option_tree]
 
     # Black–Scholes formula for benchmarking European Option
 
@@ -303,7 +349,7 @@ class OptionPricingEngine:
 
         ess = 0
         for i in range(len(options)):
-            pricing_engine = OptionPricingEngine(self.pricing_date, self.pricing_method, options[i])
+            pricing_engine = OptionPricingEngine(self.pricing_date, PRICING_METHOD, options[i])
             model_price = pricing_engine.npv(s, r, b, [], n, [], [], sigma)
             ess += (model_price - market_price[i]) ** 2
         return ess
@@ -324,7 +370,7 @@ class OptionPricingEngine:
         up, down = up_down
         ess = 0
         for i in range(len(options)):
-            pricing_engine = OptionPricingEngine(self.pricing_date, self.pricing_method, options[i])
+            pricing_engine = OptionPricingEngine(self.pricing_date, PRICING_METHOD, options[i])
             model_price = pricing_engine.npv(s, r, b, [], n, [], [], 0, [up, down])
             ess += (model_price - market_price[i]) ** 2
         return ess
@@ -342,7 +388,7 @@ class OptionPricingEngine:
         :return: list of hedging strategy of the contingent claim. Length 2, (H0, H1)
         """
         h1 = (x[1] - x[0]) / (s[1] - s[0])
-        h0 = (x[1] - s[1] * h1) / math.pow((1 + r), t)
+        h0 = (x[1] - s[1] * h1) * discount_factor(t, r, COMPOUNDING_METHOD)
 
         hedging = [h0, h1]
 
@@ -459,7 +505,8 @@ class OptionPricingEngine:
 
         # insufficient length of data
         if len(s) < 2:
-            return 0
+            print('Error: Insufficient length of data.')
+            return -1
 
         # logarithm of historical price
         log_s_return = []
@@ -482,7 +529,8 @@ class OptionPricingEngine:
 
         # insufficient length of data
         if len(s) < 2:
-            return 0
+            print('Error: Insufficient length of data.')
+            return -1
 
         s_return = []
         for i in range(1, len(s)):
@@ -502,7 +550,8 @@ class OptionPricingEngine:
 
         # insufficient length of data
         if len(s) < 2:
-            return 0
+            print('Error: Insufficient length of data.')
+            return -1
 
         s_return = []
         for i in range(1, len(s)):
@@ -526,14 +575,16 @@ class ForwardPricingEngine:
         # t: time to maturity(expressed in years, assume act/365 daycounter)
         self.t = (forward.maturity - pricing_date).days / 365
 
-    def npv(self, s: float, r: float, b: float) -> float:
+    def npv(self, s: float, r_curve: list, b: float) -> float:
         """
         Calculate the fair value of forward
         :param s: spot price of the underlying asset (ex-dividend)
-        :param r: risk free rate (annual rate, expressed in terms of continuous compounding)
+        :param r_curve: risk free rate curve(annual rate, expressed in terms of continuous compounding)
         :param b: dividend rate of underlying asset (annual rate)
         :return: the price of forward
         """
+        # Interpolate risk free rate
+        r = interpol(r_curve[0], r_curve[1], self.t)
 
         return s - self.forward.strike * discount_factor(self.t, (r - b), COMPOUNDING_METHOD)
 
@@ -575,9 +626,10 @@ def yang_hui_triangle(n: int, k: int) -> int:
     :return: the number of way to select n from k
     """
 
-    # parameter out of range
+    # parameters out of range
     if n > k or k < 0 or n < 0:
-        return 0
+        print('Error: Parameters out of range.')
+        return -1
 
     list1 = []
     for i in range(k + 1):
