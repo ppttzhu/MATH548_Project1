@@ -156,8 +156,6 @@ class OptionPricingEngine:
         We can get same result with binomial_tree_backstep function
         """
 
-        delta_t = self.t / n
-
         up = up_down_p[0]
         down = up_down_p[1]
         q_up = up_down_p[2]
@@ -578,7 +576,7 @@ class ForwardPricingEngine:
         # t: time to maturity(expressed in years, assume act/365 daycounter)
         self.t = (forward.maturity - pricing_date).days / 365
 
-    def npv(self, s: float, r_curve: list, b: float) -> float:
+    def npv(self, s: float, r_curve: list, b: float) -> list:
         """
         Calculate the fair value of forward
         :param s: spot price of the underlying asset (ex-dividend)
@@ -589,7 +587,7 @@ class ForwardPricingEngine:
         # Interpolate risk free rate
         r = interpol(r_curve[0], r_curve[1], self.t)
 
-        return s - self.forward.strike * discount_factor(self.t, (r - b), COMPOUNDING_METHOD)
+        return [s - self.forward.strike * discount_factor(self.t, (r - b), COMPOUNDING_METHOD)]
 
 
 def compounding_factor(t: float, r: float, compounding=CompoundingMethod) -> float:
