@@ -195,14 +195,14 @@ def main():
 
         lbl = Label(window, text='Strike Price', font=font)
         lbl.grid(column=0, row=0)
-        strike = Entry(window, width=10, font=font, textvariable=StringVar(window, value='34.314944'))
-        # strike = Entry(window, width=10, font=font)
+        # strike = Entry(window, width=10, font=font, textvariable=StringVar(window, value='34.314944'))
+        strike = Entry(window, width=10, font=font)
         strike.grid(column=1, row=0)
 
         lbl = Label(window, text='Maturity Date', font=font)
         lbl.grid(column=0, row=1)
-        maturity = Entry(window, width=10, font=font, textvariable=StringVar(window, value=maturity_string_test))
-        # maturity = Entry(window, width=10, font=font)
+        # maturity = Entry(window, width=10, font=font, textvariable=StringVar(window, value=maturity_string_test))
+        maturity = Entry(window, width=10, font=font)
         maturity.grid(column=1, row=1)
 
         product_type = IntVar()
