@@ -10,7 +10,6 @@
 @File URL: https://github.com/ppttzhu/MATH548_Project1/import
 """
 
-from pandas_datareader.data import Options
 from pricingengine import *
 from pandas_datareader import data
 from pinance import Pinance
@@ -96,50 +95,64 @@ def main():
 
     # ----------------performing pricing---------------------
 
+    npv = []
+
     if is_calculator:
         def click():
-            option = Option("Calculator", float(strike.get()), datetime.datetime.strptime(maturity.get(), "%Y-%m-%d"),
-                            CallPutType(call_put_type.get()),
-                            ExerciseType(exercise_type.get()))
+            if product_type.get():
+                option = Option("Calculator", float(strike.get()),
+                                datetime.datetime.strptime(maturity.get(), "%Y-%m-%d"),
+                                CallPutType(call_put_type.get()),
+                                ExerciseType(exercise_type.get()))
 
-            pricing_engine = OptionPricingEngine(pricing_date_test, option)
-            parameters = pricing_engine.calibrate(s_test, risk_free_rate, b_test, s_history_test,
-                                                  options_for_calibrate_list,
-                                                  options_for_calibrate_price_list)
+                pricing_engine = OptionPricingEngine(pricing_date_test, option)
+                parameters = pricing_engine.calibrate(s_test, risk_free_rate, b_test, s_history_test,
+                                                      options_for_calibrate_list,
+                                                      options_for_calibrate_price_list)
 
-            npv = pricing_engine.npv(s_test, risk_free_rate, b_test, parameters[0], parameters[1])
-            npv_print = '%.4f' % npv[0]
+                npv = pricing_engine.npv(s_test, risk_free_rate, b_test, parameters[0], parameters[1])
+                npv_print = '%.4f' % npv[0]
 
-            stock = Pinance(stock_name)
-            if option.call_put_type == CallPutType.call:
-                stock.get_options(maturity_string_test, 'C', option.strike)
+                stock = Pinance(stock_name)
+                if option.call_put_type == CallPutType.call:
+                    stock.get_options(maturity_string_test, 'C', option.strike)
+                else:
+                    stock.get_options(maturity_string_test, 'P', option.strike)
+                market_price_today = stock.options_data['lastPrice']
+
+                market_price_today_print = '%.4f' % market_price_today
+                difference_print = '%.4f' % (npv[0] - market_price_today)
+
+                if parameters[0] != 0:
+                    sigma_print = '%.4f' % parameters[0]
+                else:
+                    sigma_print = "N/A"
+
+                if len(parameters[1]) > 0:
+                    up_print = '%.4f' % parameters[1][0]
+                    down_print = '%.4f' % parameters[1][1]
+                    q_up_print = '%.4f' % parameters[1][2]
+                    q_down_print = '%.4f' % parameters[1][3]
+                else:
+                    up_print = "N/A"
+                    down_print = "N/A"
+                    q_up_print = "N/A"
+                    q_down_print = "N/A"
+                message = 'model price: ' + npv_print + '\nmarket price: ' + market_price_today_print \
+                          + '\n(model-market): ' + difference_print + '\n\nsigma: ' + sigma_print \
+                          + '\n\nup: ' + up_print + '\ndown: ' + down_print \
+                          + '\nq_up: ' + q_up_print + '\nq_down: ' + q_down_print
+
             else:
-                stock.get_options(maturity_string_test, 'P', option.strike)
-            market_price_today = stock.options_data['lastPrice']
+                forward = Forward("Calculator", float(strike.get()),
+                                  datetime.datetime.strptime(maturity.get(), "%Y-%m-%d"))
+                pricing_engine_forward = ForwardPricingEngine(pricing_date_test, forward)
+                npv = pricing_engine_forward.npv(s_test, risk_free_rate, b_test)
+                message = 'model price: ' + '%.4f' % npv[0]
 
-            market_price_today_print ='%.4f' % market_price_today
-            difference_print = '%.4f' % (npv[0] - market_price_today)
-
-            if parameters[0] != 0:
-                sigma_print = '%.4f' % parameters[0]
-            else:
-                sigma_print = "N/A"
-
-            if len(parameters[1]) > 0:
-                up_print = '%.4f' % parameters[1][0]
-                down_print = '%.4f' % parameters[1][1]
-                q_up_print = '%.4f' % parameters[1][2]
-                q_down_print = '%.4f' % parameters[1][3]
-            else:
-                up_print = "N/A"
-                down_print = "N/A"
-                q_up_print = "N/A"
-                q_down_print = "N/A"
-            message = 'model price: ' + npv_print + '\nmarket price: ' + market_price_today_print \
-                      + '\n(model-market): ' + difference_print + '\n\nsigma: ' + sigma_print \
-                      + '\n\nup: ' + up_print + '\ndown: ' + down_print \
-                      + '\nq_up: ' + q_up_print + '\nq_down: ' + q_down_print
             messagebox.showinfo('Price', message)  # place holder
+
+        # ----------------pop-out windows setting---------------------
 
         font = ('TIMES NEW ROMAN', 20)
 
@@ -156,20 +169,26 @@ def main():
         maturity = Entry(window, width=10, font=font)
         maturity.grid(column=1, row=1)
 
+        product_type = IntVar()
+        ra1 = Radiobutton(window, text='Option', value=1, font=font, variable=product_type)
+        ra2 = Radiobutton(window, text='Forward', value=0, font=font, variable=product_type)
+        ra1.grid(column=0, row=2)
+        ra2.grid(column=1, row=2)
+
         call_put_type = IntVar()
         rad1 = Radiobutton(window, text='Call', value=1, font=font, variable=call_put_type)
         rad2 = Radiobutton(window, text='Put', value=2, font=font, variable=call_put_type)
-        rad1.grid(column=0, row=2)
-        rad2.grid(column=1, row=2)
+        rad1.grid(column=0, row=3)
+        rad2.grid(column=1, row=3)
 
         exercise_type = IntVar()
         radn1 = Radiobutton(window, text='European', value=1, font=font, variable=exercise_type)
         radn2 = Radiobutton(window, text='American', value=2, font=font, variable=exercise_type)
-        radn1.grid(column=0, row=3)
-        radn2.grid(column=1, row=3)
+        radn1.grid(column=0, row=4)
+        radn2.grid(column=1, row=4)
 
         btn = Button(window, text='Get Price', font=font, command=click)
-        btn.grid(column=0, row=5)
+        btn.grid(column=0, row=6)
 
         window.geometry('500x350')
         window.mainloop()
@@ -177,7 +196,8 @@ def main():
     else:
 
         pricing_engine = OptionPricingEngine(pricing_date_test, options_list[0])
-        parameters = pricing_engine.calibrate(s_test, risk_free_rate, b_test, s_history_test, options_for_calibrate_list,
+        parameters = pricing_engine.calibrate(s_test, risk_free_rate, b_test, s_history_test,
+                                              options_for_calibrate_list,
                                               options_for_calibrate_price_list)
 
         npv_list = []
@@ -187,8 +207,6 @@ def main():
             npv_list.append(npv)
 
     # ----------------printing results---------------------
-
-    if not is_calculator:
 
         if parameters[0] != 0:
             print("sigma = %f" % parameters[0])
@@ -226,10 +244,6 @@ def main():
             result_writer = csv.writer(csvfile, delimiter=',', quotechar=',')
             for line in npv[5]:
                 result_writer.writerow(line)
-
-    # forward = Forward(stock_name, k_test, maturity_test)
-    # pricing_engine_forward = ForwardPricingEngine(pricing_date_test, forward)
-    # print("The price of forward is %f" % pricing_engine_forward.npv(s_test, risk_free_rate, b_test))
 
 
 if __name__ == "__main__":
