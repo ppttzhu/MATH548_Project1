@@ -40,7 +40,7 @@ class VolatilityCalculation(Enum):
 
 PRICING_METHOD = PricingMethod.binomial_tree_model
 COMPOUNDING_METHOD = CompoundingMethod.continuous_compounded
-TREE_ASSUMPTION = TreeAssumption.p_half
+TREE_ASSUMPTION = TreeAssumption.ud_1
 VOLATILITY_CALIBRATION = VolatilityCalculation.calibration
 BUSINESS_DAYS_PER_YEAR = 252
 BINOMIAL_TREE_STEP = 20
@@ -94,9 +94,9 @@ class OptionPricingEngine:
                 optimize_result = optimize.minimize(self.volatility_optimizer, guess,
                                                     args=(options, market_price, s, r_curve, b, BINOMIAL_TREE_STEP),
                                                     bounds=sigma_bounds)
-                sigma_log_return = optimize_result.x
+                sigma_log_return = optimize_result.x[0]
         else:
-            sigma_log_return = []
+            sigma_log_return = 0
 
         # Calculate up and down range
         if PRICING_METHOD is PricingMethod.binomial_tree_model:
