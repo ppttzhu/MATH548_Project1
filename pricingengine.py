@@ -38,7 +38,7 @@ class VolatilityCalculation(Enum):
     calibration = 2
 
 
-PRICING_METHOD = PricingMethod.binomial_tree_model
+PRICING_METHOD = PricingMethod.bs_baw_benchmarking_model
 COMPOUNDING_METHOD = CompoundingMethod.continuous_compounded
 TREE_ASSUMPTION = TreeAssumption.ud_1
 VOLATILITY_CALIBRATION = VolatilityCalculation.calibration
@@ -140,10 +140,12 @@ class OptionPricingEngine:
 
         elif PRICING_METHOD is PricingMethod.bs_baw_benchmarking_model:
             # For benchmark
+
             if self.option.exercise_type is ExerciseType.european:
-                return [self.bs_formula(s, r, b, sigma)]
+                npv = self.bs_formula(s, r, b, sigma)
             elif self.option.exercise_type is ExerciseType.american:
-                return [self.baw_formula(s, r, b, sigma)]
+                npv = self.baw_formula(s, r, b, sigma)
+            return [npv[0]]
 
         print('Error: Method not supported.')
         return -1
