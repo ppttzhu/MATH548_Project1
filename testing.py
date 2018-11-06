@@ -29,7 +29,7 @@ def main():
     maturity_test = datetime.datetime.strptime(maturity_string_test, "%Y-%m-%d")
     pricing_date_string_test = "2018-11-05"
     pricing_date_test = datetime.datetime.strptime(pricing_date_string_test, "%Y-%m-%d")
-    is_calculator = 0  # use a calculator or not
+    is_calculator = 1  # use a calculator or not
 
     # ----------------product data---------------------
 
@@ -191,7 +191,7 @@ def main():
         font = ('TIMES NEW ROMAN', 20)
 
         window = Tk()
-        window.title('Options Pricing Tool')
+        window.title('Derivatives Pricing Tool')
 
         lbl = Label(window, text='Strike Price', font=font)
         lbl.grid(column=0, row=0)
@@ -214,14 +214,14 @@ def main():
         call_put_type = IntVar()
         rad1 = Radiobutton(window, text='Call', value=1, font=font, variable=call_put_type)
         rad2 = Radiobutton(window, text='Put', value=2, font=font, variable=call_put_type)
-        call_put_type.set(1)
+        # call_put_type.set(1)
         rad1.grid(column=0, row=3)
         rad2.grid(column=1, row=3)
 
         exercise_type = IntVar()
         radn1 = Radiobutton(window, text='European', value=1, font=font, variable=exercise_type)
         radn2 = Radiobutton(window, text='American', value=2, font=font, variable=exercise_type)
-        exercise_type.set(1)
+        # exercise_type.set(1)
         radn1.grid(column=0, row=4)
         radn2.grid(column=1, row=4)
 
