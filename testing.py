@@ -29,7 +29,7 @@ def main():
     maturity_test = datetime.datetime.strptime(maturity_string_test, "%Y-%m-%d")
     pricing_date_string_test = "2018-11-05"
     pricing_date_test = datetime.datetime.strptime(pricing_date_string_test, "%Y-%m-%d")
-    is_calculator = 1  # use a calculator or not
+    is_calculator = 0  # use a calculator or not
 
     # ----------------product data---------------------
 
@@ -95,10 +95,12 @@ def main():
 
     # ----------------performing pricing---------------------
 
+    global npv
     npv = []
 
     if is_calculator:
         def click():
+            global npv
             if product_type.get():
                 option = Option("Calculator", float(strike.get()),
                                 datetime.datetime.strptime(maturity.get(), "%Y-%m-%d"),
@@ -118,10 +120,13 @@ def main():
                     stock.get_options(maturity_string_test, 'C', option.strike)
                 else:
                     stock.get_options(maturity_string_test, 'P', option.strike)
-                market_price_today = stock.options_data['lastPrice']
-
-                market_price_today_print = '%.4f' % market_price_today
-                difference_print = '%.4f' % (npv[0] - market_price_today)
+                try:
+                    market_price_today = stock.options_data['lastPrice']
+                    market_price_today_print = '%.4f' % market_price_today
+                    difference_print = '%.4f' % (npv[0] - market_price_today)
+                except TypeError as te:
+                    market_price_today_print = "Not Found"
+                    difference_print = "N/A"
 
                 if parameters[0] != 0:
                     sigma_print = '%.4f' % parameters[0]
@@ -144,11 +149,40 @@ def main():
                           + '\nq_up: ' + q_up_print + '\nq_down: ' + q_down_print
 
             else:
+                option = Option("Calculator", float(strike.get()),
+                                datetime.datetime.strptime(maturity.get(), "%Y-%m-%d"),
+                                CallPutType(1),
+                                ExerciseType(1))
+
+                pricing_engine_option = OptionPricingEngine(pricing_date_test, option)
+                parameters = pricing_engine_option.calibrate(s_test, risk_free_rate, b_test, s_history_test,
+                                                             options_for_calibrate_list,
+                                                             options_for_calibrate_price_list)
+
                 forward = Forward("Calculator", float(strike.get()),
                                   datetime.datetime.strptime(maturity.get(), "%Y-%m-%d"))
                 pricing_engine_forward = ForwardPricingEngine(pricing_date_test, forward)
-                npv = pricing_engine_forward.npv(s_test, risk_free_rate, b_test)
-                message = 'model price: ' + '%.4f' % npv[0]
+                npv = pricing_engine_forward.npv(s_test, risk_free_rate, b_test, parameters[0], parameters[1])
+                npv_print = '%.4f' % npv[0]
+
+                if parameters[0] != 0:
+                    sigma_print = '%.4f' % parameters[0]
+                else:
+                    sigma_print = "N/A"
+
+                if len(parameters[1]) > 0:
+                    up_print = '%.4f' % parameters[1][0]
+                    down_print = '%.4f' % parameters[1][1]
+                    q_up_print = '%.4f' % parameters[1][2]
+                    q_down_print = '%.4f' % parameters[1][3]
+                else:
+                    up_print = "N/A"
+                    down_print = "N/A"
+                    q_up_print = "N/A"
+                    q_down_print = "N/A"
+                message = 'model price: ' + npv_print + '\n\nsigma: ' + sigma_print \
+                          + '\n\nup: ' + up_print + '\ndown: ' + down_print \
+                          + '\nq_up: ' + q_up_print + '\nq_down: ' + q_down_print
 
             messagebox.showinfo('Price', message)  # place holder
 
@@ -161,12 +195,14 @@ def main():
 
         lbl = Label(window, text='Strike Price', font=font)
         lbl.grid(column=0, row=0)
-        strike = Entry(window, width=10, font=font)
+        strike = Entry(window, width=10, font=font, textvariable=StringVar(window, value='34.314944'))
+        # strike = Entry(window, width=10, font=font)
         strike.grid(column=1, row=0)
 
         lbl = Label(window, text='Maturity Date', font=font)
         lbl.grid(column=0, row=1)
-        maturity = Entry(window, width=10, font=font)
+        maturity = Entry(window, width=10, font=font, textvariable=StringVar(window, value=maturity_string_test))
+        # maturity = Entry(window, width=10, font=font)
         maturity.grid(column=1, row=1)
 
         product_type = IntVar()
@@ -178,12 +214,14 @@ def main():
         call_put_type = IntVar()
         rad1 = Radiobutton(window, text='Call', value=1, font=font, variable=call_put_type)
         rad2 = Radiobutton(window, text='Put', value=2, font=font, variable=call_put_type)
+        call_put_type.set(1)
         rad1.grid(column=0, row=3)
         rad2.grid(column=1, row=3)
 
         exercise_type = IntVar()
         radn1 = Radiobutton(window, text='European', value=1, font=font, variable=exercise_type)
         radn2 = Radiobutton(window, text='American', value=2, font=font, variable=exercise_type)
+        exercise_type.set(1)
         radn1.grid(column=0, row=4)
         radn2.grid(column=1, row=4)
 
@@ -206,7 +244,7 @@ def main():
             npv = pricing_engine.npv(s_test, risk_free_rate, b_test, parameters[0], parameters[1])
             npv_list.append(npv)
 
-    # ----------------printing results---------------------
+        # ----------------printing results---------------------
 
         if parameters[0] != 0:
             print("sigma = %f" % parameters[0])
@@ -240,7 +278,7 @@ def main():
             result_writer = csv.writer(csvfile, delimiter=',', quotechar=',')
             for line in npv[4]:
                 result_writer.writerow(line)
-        with open("[output]option_tree.csv", "w", newline='') as csvfile:
+        with open("[output]derivative_tree.csv", "w", newline='') as csvfile:
             result_writer = csv.writer(csvfile, delimiter=',', quotechar=',')
             for line in npv[5]:
                 result_writer.writerow(line)
