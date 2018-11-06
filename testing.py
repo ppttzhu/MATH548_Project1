@@ -16,6 +16,8 @@ from pandas_datareader import data
 from pinance import Pinance
 from dateutil.relativedelta import relativedelta
 import csv
+from tkinter import *
+from tkinter import messagebox
 
 
 def main():
@@ -28,7 +30,7 @@ def main():
     maturity_test = datetime.datetime.strptime(maturity_string_test, "%Y-%m-%d")
     pricing_date_string_test = "2018-11-05"
     pricing_date_test = datetime.datetime.strptime(pricing_date_string_test, "%Y-%m-%d")
-    IS_CALCULATOR = 0  # use a calculator or not
+    is_calculator = 1  # use a calculator or not
 
     # ----------------product data---------------------
 
@@ -55,9 +57,6 @@ def main():
             options_price_list.append(float(item[5]))
 
     csv_file.close()
-
-    if IS_CALCULATOR:
-        print("windows")
 
     # ----------------market data---------------------
 
@@ -95,48 +94,118 @@ def main():
     risk_free_rate = [risk_free_rate_x, risk_free_rate_y]
     csv_file.close()
 
-    if IS_CALCULATOR:
-        stock = Pinance(stock_name)
-        if options_list[0].call_put_type == CallPutType.call:
-            stock.get_options(maturity_string_test, 'C', options_list[0].strike)
-        else:
-            stock.get_options(maturity_string_test, 'P', options_list[0].strike)
-        market_price_today = stock.options_data['lastPrice']
-
     # ----------------performing pricing---------------------
 
-    pricing_engine = OptionPricingEngine(pricing_date_test, options_list[0])
-    parameters = pricing_engine.calibrate(s_test, risk_free_rate, b_test, s_history_test, options_for_calibrate_list,
-                                          options_for_calibrate_price_list)
+    if is_calculator:
+        def click():
+            option = Option("Calculator", float(strike.get()), datetime.datetime.strptime(maturity.get(), "%Y-%m-%d"),
+                            CallPutType(call_put_type.get()),
+                            ExerciseType(exercise_type.get()))
 
-    npv_list = []
-    for option in options_list:
-        pricing_engine = OptionPricingEngine(pricing_date_test, option)
-        npv = pricing_engine.npv(s_test, risk_free_rate, b_test, parameters[0], parameters[1])
-        npv_list.append(npv)
+            pricing_engine = OptionPricingEngine(pricing_date_test, option)
+            parameters = pricing_engine.calibrate(s_test, risk_free_rate, b_test, s_history_test,
+                                                  options_for_calibrate_list,
+                                                  options_for_calibrate_price_list)
+
+            npv = pricing_engine.npv(s_test, risk_free_rate, b_test, parameters[0], parameters[1])
+            npv_print = '%.4f' % npv[0]
+
+            stock = Pinance(stock_name)
+            if option.call_put_type == CallPutType.call:
+                stock.get_options(maturity_string_test, 'C', option.strike)
+            else:
+                stock.get_options(maturity_string_test, 'P', option.strike)
+            market_price_today = stock.options_data['lastPrice']
+
+            market_price_today_print ='%.4f' % market_price_today
+            difference_print = '%.4f' % (npv[0] - market_price_today)
+
+            if parameters[0] != 0:
+                sigma_print = '%.4f' % parameters[0]
+            else:
+                sigma_print = "N/A"
+
+            if len(parameters[1]) > 0:
+                up_print = '%.4f' % parameters[1][0]
+                down_print = '%.4f' % parameters[1][1]
+                q_up_print = '%.4f' % parameters[1][2]
+                q_down_print = '%.4f' % parameters[1][3]
+            else:
+                up_print = "N/A"
+                down_print = "N/A"
+                q_up_print = "N/A"
+                q_down_print = "N/A"
+            message = 'model price: ' + npv_print + '\nmarket price: ' + market_price_today_print \
+                      + '\n(model-market): ' + difference_print + '\n\nsigma: ' + sigma_print \
+                      + '\n\nup: ' + up_print + '\ndown: ' + down_print \
+                      + '\nq_up: ' + q_up_print + '\nq_down: ' + q_down_print
+            messagebox.showinfo('Price', message)  # place holder
+
+        font = ('TIMES NEW ROMAN', 20)
+
+        window = Tk()
+        window.title('Options Pricing Tool')
+
+        lbl = Label(window, text='Strike Price', font=font)
+        lbl.grid(column=0, row=0)
+        strike = Entry(window, width=10, font=font)
+        strike.grid(column=1, row=0)
+
+        lbl = Label(window, text='Maturity Date', font=font)
+        lbl.grid(column=0, row=1)
+        maturity = Entry(window, width=10, font=font)
+        maturity.grid(column=1, row=1)
+
+        call_put_type = IntVar()
+        rad1 = Radiobutton(window, text='Call', value=1, font=font, variable=call_put_type)
+        rad2 = Radiobutton(window, text='Put', value=2, font=font, variable=call_put_type)
+        rad1.grid(column=0, row=2)
+        rad2.grid(column=1, row=2)
+
+        exercise_type = IntVar()
+        radn1 = Radiobutton(window, text='European', value=1, font=font, variable=exercise_type)
+        radn2 = Radiobutton(window, text='American', value=2, font=font, variable=exercise_type)
+        radn1.grid(column=0, row=3)
+        radn2.grid(column=1, row=3)
+
+        btn = Button(window, text='Get Price', font=font, command=click)
+        btn.grid(column=0, row=5)
+
+        window.geometry('500x350')
+        window.mainloop()
+
+    else:
+
+        pricing_engine = OptionPricingEngine(pricing_date_test, options_list[0])
+        parameters = pricing_engine.calibrate(s_test, risk_free_rate, b_test, s_history_test, options_for_calibrate_list,
+                                              options_for_calibrate_price_list)
+
+        npv_list = []
+        for option in options_list:
+            pricing_engine = OptionPricingEngine(pricing_date_test, option)
+            npv = pricing_engine.npv(s_test, risk_free_rate, b_test, parameters[0], parameters[1])
+            npv_list.append(npv)
 
     # ----------------printing results---------------------
 
-    if len(parameters[0]) > 0:
-        print("sigma = %f" % parameters[0])
-    if parameters[1]:
-        print("up = %f" % parameters[1][0])
-        print("down = %f" % parameters[1][1])
-        print("q_up = %f" % parameters[1][2])
-        print("q_down = %f" % parameters[1][3])
+    if not is_calculator:
 
-    if not IS_CALCULATOR:
+        if parameters[0] != 0:
+            print("sigma = %f" % parameters[0])
+        if parameters[1]:
+            print("up = %f" % parameters[1][0])
+            print("down = %f" % parameters[1][1])
+            print("q_up = %f" % parameters[1][2])
+            print("q_down = %f" % parameters[1][3])
+
         with open("[output]npv_list.csv", "w", newline='') as csvfile:
             result_writer = csv.writer(csvfile, delimiter=',', quotechar=',')
             for i in range(len(options_list)):
                 result_writer.writerow([options_list[i].product_id, npv_list[i][0], options_price_list[i],
                                         npv_list[i][0] - options_price_list[i]])
 
-    if IS_CALCULATOR:
-        print("price = " + npv[0])
-
     # export hedging strategy in csv files
-    if len(npv) > 1 and IS_CALCULATOR:
+    if len(npv) > 1 and is_calculator:
         with open("[output]h0_tree.csv", "w", newline='') as csvfile:
             result_writer = csv.writer(csvfile, delimiter=',', quotechar=',')
             for line in npv[1]:
