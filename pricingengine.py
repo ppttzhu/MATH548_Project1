@@ -348,11 +348,14 @@ class OptionPricingEngine:
         """
         Find the optimal volatility to minimize the squared sum of error between model price and market price
         """
+        r = interpol(r_curve[0], r_curve[1], self.t)
+        delta_t = self.t / BINOMIAL_TREE_STEP
+        up_down_p = self.ud_1_list(sigma, r, delta_t)
 
         ess = 0
         for i in range(len(options)):
             pricing_engine = OptionPricingEngine(self.pricing_date, options[i])
-            model_price = pricing_engine.npv(s, r_curve, b, sigma, [])
+            model_price = pricing_engine.npv(s, r_curve, b, sigma, up_down_p)
             ess += math.pow(model_price[0] - market_price[i], 2)
         return ess
 
