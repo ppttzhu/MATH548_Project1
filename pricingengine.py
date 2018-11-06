@@ -92,7 +92,7 @@ class OptionPricingEngine:
                 guess = 0.1
                 sigma_bounds = ((0, 10),)
                 optimize_result = optimize.minimize(self.volatility_optimizer, guess,
-                                                    args=(options, market_price, s, r_curve, b, BINOMIAL_TREE_STEP),
+                                                    args=(options, market_price, s, r_curve, b),
                                                     bounds=sigma_bounds)
                 sigma_log_return = optimize_result.x[0]
         else:
@@ -111,7 +111,7 @@ class OptionPricingEngine:
                 guess = [math.exp(r * delta_t), math.exp(-r * delta_t)]
                 ud_bounds = ((1, 10), (0, 1))  # bound for up is (1, 10) and bound for down is (0, 1)
                 optimize_result = optimize.minimize(self.up_down_optimizer, guess,
-                                                    args=(options, market_price, s, r_curve, b, BINOMIAL_TREE_STEP),
+                                                    args=(options, market_price, s, r_curve, b),
                                                     bounds=ud_bounds)
                 # print(optimize_result)
                 up_down = optimize_result.x
@@ -242,7 +242,7 @@ class OptionPricingEngine:
                 for branch in range(time_step):
                     s_up_down = [s_t_list[branch], s_t_list[branch + 1]]
                     x_up_down = [z_t[branch], z_t[branch + 1]]
-                    hedging = self.binomial_tree_hedging(s_up_down, x_up_down, r, delta_t)
+                    hedging = binomial_tree_hedging(s_up_down, x_up_down, r, delta_t * time_step)
                     h0_t_list.append(hedging[0])
                     h1_t_list.append(hedging[1])
                 h0_tree.insert(0, h0_t_list)
@@ -343,8 +343,8 @@ class OptionPricingEngine:
 
     # Optimizers for calibration
 
-    def volatility_optimizer(self, sigma: float, options: list, market_price: list, s: float, r_curve: list, b: float,
-                             n: int) -> float:
+    def volatility_optimizer(self, sigma: float, options: list, market_price: list, s: float, r_curve: list,
+                             b: float) -> float:
         """
         Find the optimal volatility to minimize the squared sum of error between model price and market price
         """
@@ -359,8 +359,8 @@ class OptionPricingEngine:
             ess += math.pow(model_price[0] - market_price[i], 2)
         return ess
 
-    def up_down_optimizer(self, up_down_q: list, options: list, market_price: list, s: float, r_curve: list, b: float,
-                          n: int) -> float:
+    def up_down_optimizer(self, up_down_q: list, options: list, market_price: list, s: float, r_curve: list,
+                          b: float) -> float:
         """
         Find the optimal up and down range to minimize the squared sum of error between model price and market price
         """
@@ -377,23 +377,6 @@ class OptionPricingEngine:
         return ess
 
     # Supporting static functions
-
-    @staticmethod
-    def binomial_tree_hedging(s: list, x: list, r: float, t: float) -> list:
-        """
-        binomial tree support function to calculate hedging ratio on each node
-        :param s: list of spot price of the underlying asset. Length 2, upward and downward side.
-        :param x: list of value of the contingent claim. Length 2, upward and downward side.
-        :param r: risk free rate (annual rate, expressed in terms of compounding)
-        :param t: time interval of binomial tree (expressed in years)
-        :return: list of hedging strategy of the contingent claim. Length 2, (H0, H1)
-        """
-        h1 = (x[1] - x[0]) / (s[1] - s[0])
-        h0 = (x[1] - s[1] * h1) * discount_factor(t, r, COMPOUNDING_METHOD)
-
-        hedging = [h0, h1]
-
-        return hedging
 
     @staticmethod
     def ud_1_list(sigma: float, r: float, delta_t: float) -> list:
@@ -576,9 +559,84 @@ class ForwardPricingEngine:
         # t: time to maturity(expressed in years, assume act/365 daycounter)
         self.t = (forward.maturity - pricing_date).days / 365
 
-    def npv(self, s: float, r_curve: list, b: float) -> list:
+    def npv(self, s: float, r_curve: list, b: float, sigma: float = 0, up_down_p: list = []) -> list:
         """
-        Calculate the fair value of forward
+        Calculate the fair value and hedging strategy of forward by rolling back the payoff step by step
+        :param s: spot price of the underlying asset (ex-dividend)
+        :param r_curve: risk free rate curve(annual rate, expressed in terms of continuous compounding)
+        :param b: dividend rate of underlying asset (annual rate)
+        :param sigma: calibrated sigma
+        :param up_down_p: calibrated up and down
+        :return: the price of forward [npv, h0_tree, h1_tree, s_tree, bond_tree, option_tree]
+        """
+        # Interpolate risk free rate
+        r = interpol(r_curve[0], r_curve[1], self.t)
+        n = BINOMIAL_TREE_STEP
+        delta_t = self.t / n
+
+        up = up_down_p[0]
+        down = up_down_p[1]
+        q_up = up_down_p[2]
+        q_down = up_down_p[3]
+
+        h0_tree = []
+        h1_tree = []
+        s_tree = []
+        bond_tree = []
+        option_tree = []
+
+        # price by rolling back the payoff step by step
+        x_t_1_discounted = []
+        for time_step in range(n, -1, -1):
+            x_t = []
+            s_t_list = []
+            b_t_list = []
+            h0_t_list = []
+            h1_t_list = []
+            for branch in range(time_step + 1):
+                # calculate intrinsic value
+
+                s_t = s * compounding_factor(time_step * delta_t, - b, COMPOUNDING_METHOD) \
+                      * math.pow(up, time_step - branch) * math.pow(down, branch)
+
+                s_t_list.append(s_t)
+                b_t_list.append(compounding_factor(time_step * delta_t, r, COMPOUNDING_METHOD))
+
+                if time_step == n:  # last step Z_T = Y_T
+                    payoff = s_t - self.forward.strike
+                    x_t.append(payoff)
+                else:
+                    x_t.append(x_t_1_discounted[branch])
+
+            # Calculate hedging strategy
+            if time_step != 0:
+                for branch in range(time_step):
+                    s_up_down = [s_t_list[branch], s_t_list[branch + 1]]
+                    x_up_down = [x_t[branch], x_t[branch + 1]]
+                    hedging = binomial_tree_hedging(s_up_down, x_up_down, r, delta_t * time_step)
+                    h0_t_list.append(hedging[0])
+                    h1_t_list.append(hedging[1])
+                h0_tree.insert(0, h0_t_list)
+                h1_tree.insert(0, h1_t_list)
+
+            s_tree.insert(0, s_t_list)
+            bond_tree.insert(0, b_t_list)
+            option_tree.insert(0, x_t)
+
+            # Discount x_t to x_t_1_discounted
+            x_t_1_discounted = []
+            if time_step != 0:
+                for i in range(time_step):
+                    x_t_1_discounted.append(discount_factor(delta_t, r, COMPOUNDING_METHOD)
+                                            * (q_up * x_t[i] + q_down * x_t[i + 1]))
+            else:
+                npv = x_t[0]
+
+        return [npv, h0_tree, h1_tree, s_tree, bond_tree, option_tree]
+
+    def forward_analytic(self, s: float, r_curve: list, b: float) -> list:
+        """
+        Calculate the fair value of forward (For benchmarking)
         :param s: spot price of the underlying asset (ex-dividend)
         :param r_curve: risk free rate curve(annual rate, expressed in terms of continuous compounding)
         :param b: dividend rate of underlying asset (annual rate)
@@ -667,3 +725,20 @@ def interpol(x_vector: list, y_vector: list, point: float) -> float:
                 return y_vector[num]
         weight = (x_vector[i] - point) / (x_vector[i] - x_vector[i - 1])
         return weight * y_vector[i - 1] + (1 - weight) * y_vector[i]
+
+
+def binomial_tree_hedging(s: list, x: list, r: float, t: float) -> list:
+    """
+    binomial tree support function to calculate hedging ratio on each node
+    :param s: list of spot price of the underlying asset. Length 2, upward and downward side.
+    :param x: list of value of the contingent claim. Length 2, upward and downward side.
+    :param r: risk free rate (annual rate, expressed in terms of compounding)
+    :param t: time interval of binomial tree (expressed in years)
+    :return: list of hedging strategy of the contingent claim. Length 2, (H0, H1)
+    """
+    h1 = (x[1] - x[0]) / (s[1] - s[0])
+    h0 = (x[1] - s[1] * h1) * discount_factor(t, r, COMPOUNDING_METHOD)
+
+    hedging = [h0, h1]
+
+    return hedging
