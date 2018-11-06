@@ -117,7 +117,7 @@ def main():
 
     # ----------------printing results---------------------
 
-    if not parameters[0] == []:
+    if len(parameters[0]) > 0:
         print("sigma = %f" % parameters[0])
     if parameters[1]:
         print("up = %f" % parameters[1][0])
