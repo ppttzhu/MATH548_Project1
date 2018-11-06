@@ -38,12 +38,12 @@ class VolatilityCalculation(Enum):
     calibration = 2
 
 
-PRICING_METHOD = PricingMethod.bs_baw_benchmarking_model
+PRICING_METHOD = PricingMethod.binomial_tree_model
 COMPOUNDING_METHOD = CompoundingMethod.continuous_compounded
-TREE_ASSUMPTION = TreeAssumption.ud_1
+TREE_ASSUMPTION = TreeAssumption.p_half
 VOLATILITY_CALIBRATION = VolatilityCalculation.calibration
 BUSINESS_DAYS_PER_YEAR = 252
-BINOMIAL_TREE_STEP = 10
+BINOMIAL_TREE_STEP = 20
 
 
 class OptionPricingEngine:
