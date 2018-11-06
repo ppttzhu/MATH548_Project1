@@ -25,16 +25,16 @@ class ExerciseType(Enum):
 
 
 class Option:
-    def __init__(self, underlying: str, strike: float, maturity=datetime, call_put_type=CallPutType,
+    def __init__(self, product_id: str, strike: float, maturity=datetime, call_put_type=CallPutType,
                  exercise_type=ExerciseType):
         """
-        :param underlying: Name of the underlying security
+        :param product_id: the ID of option
         :param strike: Strike price of option
         :param maturity: Maturity date of option
         :param call_put_type: Enum type indicator: 1 for call, 2 for put
         :param exercise_type: Enum type indicator: 1 for European, 2 for American
         """
-        self.underlying = underlying
+        self.product_id = product_id
         self.strike = strike
         self.maturity = maturity
         self.call_put_type = call_put_type
@@ -42,12 +42,12 @@ class Option:
 
 
 class Forward:
-    def __init__(self, underlying: str, strike: float, maturity=datetime):
+    def __init__(self, product_id: str, strike: float, maturity=datetime):
         """
-        :param underlying: Name of the underlying security
+        :param product_id: the ID of forward
         :param strike: Strike price of forward
         :param maturity: Maturity date of forward
         """
-        self.underlying = underlying
+        self.product_id = product_id
         self.strike = strike
         self.maturity = maturity
