@@ -103,6 +103,29 @@ def main():
         def click():
             global npv
             if product_type.get():
+                
+                # Re-fetch market data
+                
+                maturity_test = datetime.datetime.strptime(maturity.get(), "%Y-%m-%d")
+                
+                historical_start_date2 = pricing_date_test - (maturity_test - pricing_date_test)
+                historical_start_date1 = pricing_date_test - relativedelta(years=1)
+                historical_start_date_test = min(historical_start_date1, historical_start_date2)
+            
+                stock_price_list = data.DataReader(name=stock_name, data_source=data_source_price, start=historical_start_date_test,
+                                                   end=pricing_date_test)
+                s_history_test = stock_price_list['Adj Close']
+                s_test = stock_price_list['Adj Close'][pricing_date_test]
+            
+                dividend_list = data.DataReader(name=stock_name, data_source=data_source_dividend, start=historical_start_date1,
+                                                end=pricing_date_test)
+                if not dividend_list.empty:
+                    b_test = sum(list(dividend_list['value'])) / s_test
+                else:
+                    b_test = 0
+                
+                # Process pricing
+                
                 option = Option("Calculator", float(strike.get()),
                                 datetime.datetime.strptime(maturity.get(), "%Y-%m-%d"),
                                 CallPutType(call_put_type.get()),
@@ -113,7 +136,14 @@ def main():
                                                       options_for_calibrate_list,
                                                       options_for_calibrate_price_list)
 
+#                 #TODO: For testing
+#                 parameters[0] = 0.1  # sigma
+#                 parameters[1] = [2, 0.5, 1 / 3, 2 / 3]  # [up, down, q_up, q_down]
+
                 npv = pricing_engine.npv(s_test, risk_free_rate, b_test, parameters[0], parameters[1])
+                
+                # Outputs
+                
                 npv_print = '%.4f' % npv[0]
 
                 stock = Pinance(stock_name)
@@ -150,6 +180,27 @@ def main():
                           +'\nq_up: ' + q_up_print + '\nq_down: ' + q_down_print
 
             else:
+                
+                # Re-fetch market data
+                
+                maturity_test = datetime.datetime.strptime(maturity.get(), "%Y-%m-%d")
+                
+                historical_start_date2 = pricing_date_test - (maturity_test - pricing_date_test)
+                historical_start_date1 = pricing_date_test - relativedelta(years=1)
+                historical_start_date_test = min(historical_start_date1, historical_start_date2)
+            
+                stock_price_list = data.DataReader(name=stock_name, data_source=data_source_price, start=historical_start_date_test,
+                                                   end=pricing_date_test)
+                s_history_test = stock_price_list['Adj Close']
+                s_test = stock_price_list['Adj Close'][pricing_date_test]
+            
+                dividend_list = data.DataReader(name=stock_name, data_source=data_source_dividend, start=historical_start_date1,
+                                                end=pricing_date_test)
+                if not dividend_list.empty:
+                    b_test = sum(list(dividend_list['value'])) / s_test
+                else:
+                    b_test = 0
+                
                 option = Option("Calculator", float(strike.get()),
                                 datetime.datetime.strptime(maturity.get(), "%Y-%m-%d"),
                                 CallPutType(1),
@@ -159,6 +210,10 @@ def main():
                 parameters = pricing_engine_option.calibrate(s_test, risk_free_rate, b_test, s_history_test,
                                                              options_for_calibrate_list,
                                                              options_for_calibrate_price_list)
+
+#                 #TODO: For testing
+#                 parameters[0] = 0.1  # sigma
+#                 parameters[1] = [2, 0.5, 1 / 3, 2 / 3]  # [up, down, q_up, q_down]
 
                 forward = Forward("Calculator", float(strike.get()),
                                   datetime.datetime.strptime(maturity.get(), "%Y-%m-%d"))
@@ -238,10 +293,14 @@ def main():
         parameters = pricing_engine.calibrate(s_test, risk_free_rate, b_test, s_history_test,
                                               options_for_calibrate_list,
                                               options_for_calibrate_price_list)
+#         #TODO: For testing
+#         parameters[0] = 0.1  # sigma
+#         parameters[1] = [2, 0.5, 1 / 3, 2 / 3]  # [up, down, q_up, q_down]
 
         npv_list = []
         for option in options_list:
             pricing_engine = OptionPricingEngine(pricing_date_test, option)
+
             npv = pricing_engine.npv(s_test, risk_free_rate, b_test, parameters[0], parameters[1])
             npv_list.append(npv)
 
