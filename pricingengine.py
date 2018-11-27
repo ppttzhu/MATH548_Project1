@@ -7,7 +7,7 @@
 @Author: Kim Ki Hyeon, Lu Weikun, Peng Yixin, Zhou Nan
 @Date: 2018/10/25
 @Description：Include derivatives pricing types and method
-@File URL: https://github.com/ppttzhu/MATH548_Project1/import
+@File URL: https://github.com/ppttzhu/MATH548_Project1
 """
 
 import numpy as np
@@ -47,6 +47,7 @@ BINOMIAL_TREE_STEP = 20
 
 
 class OptionPricingEngine:
+
     def __init__(self, pricing_date=datetime, option=Option):
         """
         :param pricing_date: Date to calculate fair value
@@ -65,8 +66,8 @@ class OptionPricingEngine:
         # t: time to maturity(expressed in years, assume act/365 daycounter)
         self.t = (option.maturity - pricing_date).days / 365
 
-    def calibrate(self, s: float, r_curve: list, b: float, s_history: list = [], options: list = [],
-                  market_price: list = []) -> list:
+    def calibrate(self, s: float, r_curve: list, b: float, s_history: list=[], options: list=[],
+                  market_price: list=[]) -> list:
         """
         Calibrate pricing models
         :param s: spot price of the underlying asset (ex-dividend)
@@ -121,7 +122,7 @@ class OptionPricingEngine:
 
         return [sigma_log_return, up_down_p]
 
-    def npv(self, s: float, r_curve: list, b: float, sigma: float = 0, up_down_p: list = []) -> list:
+    def npv(self, s: float, r_curve: list, b: float, sigma: float=0, up_down_p: list=[]) -> list:
         """
         The summary of pricing models
         :param s: spot price of the underlying asset (ex-dividend)
@@ -166,10 +167,10 @@ class OptionPricingEngine:
         for i in range(n + 1):
             payoff = 0
             if self.cp == 1:
-                payoff = self.call_payoff((s * compounding_factor(self.t, - b, COMPOUNDING_METHOD)
+                payoff = self.call_payoff((s * compounding_factor(self.t, -b, COMPOUNDING_METHOD)
                                            * math.pow(up, i) * math.pow(down, n - i)), self.option.strike)
             elif self.cp == -1:
-                payoff = self.put_payoff((s * compounding_factor(self.t, - b, COMPOUNDING_METHOD)
+                payoff = self.put_payoff((s * compounding_factor(self.t, -b, COMPOUNDING_METHOD)
                                           * math.pow(up, i) * math.pow(down, n - i)), self.option.strike)
             npv += discount_factor(self.t, r, COMPOUNDING_METHOD) * yang_hui_triangle(i, n) \
                    * payoff * math.pow(q_up, i) * math.pow(q_down, n - i)
@@ -206,7 +207,7 @@ class OptionPricingEngine:
                 # calculate intrinsic value
                 payoff = 0
 
-                s_t = s * compounding_factor(time_step * delta_t, - b, COMPOUNDING_METHOD) \
+                s_t = s * compounding_factor(time_step * delta_t, -b, COMPOUNDING_METHOD) \
                       * math.pow(up, time_step - branch) * math.pow(down, branch)
 
                 s_t_list.append(s_t)
@@ -214,7 +215,7 @@ class OptionPricingEngine:
 
                 if self.option.exercise_type is ExerciseType.american:
                     # American option: buyer can choose to exercise before or after dividend
-                    s_t_ex_div = s * compounding_factor(max((time_step - 1), 0) * delta_t, - b, COMPOUNDING_METHOD) \
+                    s_t_ex_div = s * compounding_factor(max((time_step - 1), 0) * delta_t, -b, COMPOUNDING_METHOD) \
                                  * math.pow(up, time_step - branch) * math.pow(down, branch)
                 else:
                     s_t_ex_div = s_t
@@ -274,7 +275,7 @@ class OptionPricingEngine:
         d2 = self.bs_formula_d2(s, self.option.strike, self.t, r, b, sigma)
 
         npv = self.cp * (norm.cdf(self.cp * d1) * s * math.exp(-b * self.t)
-                         - norm.cdf(self.cp * d2) * self.option.strike * math.exp(-r * self.t))
+                         -norm.cdf(self.cp * d2) * self.option.strike * math.exp(-r * self.t))
 
         return npv
 
@@ -308,7 +309,7 @@ class OptionPricingEngine:
         # seed value from paper
         qu = 0.5 * ((-nn - 1.0) + cp * math.sqrt(math.pow((nn - 1), 2.0) + 4.0 * m))
         su = k / (1.0 - 1.0 / qu)
-        h2 = - (b * t + cp * 2.0 * sigma * math.sqrt(t)) * (k / (su - k))
+        h2 = -(b * t + cp * 2.0 * sigma * math.sqrt(t)) * (k / (su - k))
         s_seed = k + (su - k) * (1.0 - math.exp(h2))
 
         # Using Newton Raphson algorithm to find critical price Si
@@ -323,7 +324,7 @@ class OptionPricingEngine:
             d1 = self.bs_formula_d1(si, k, t, r, b, sigma)
             g = cp * (si - k - (1.0 / q) * si * (1 - math.exp((b - r) * t) * norm.cdf(cp * d1))) - e
             gprime = cp * (1.0 - 1.0 / q) * (1.0 - math.exp((b - r) * t) * norm.cdf(cp * d1)) \
-                     + (1.0 / q) * math.exp((b - r) * t) * norm.pdf(cp * d1) * (1.0 / (sigma * math.sqrt(t)))
+                     +(1.0 / q) * math.exp((b - r) * t) * norm.pdf(cp * d1) * (1.0 / (sigma * math.sqrt(t)))
             si = si - (g / gprime)
             no_iterations = no_iterations + 1
 
@@ -547,6 +548,7 @@ class OptionPricingEngine:
 
 
 class ForwardPricingEngine:
+
     def __init__(self, pricing_date=datetime, forward=Forward):
         """
         :param pricing_date: Date to calculate fair value
@@ -559,7 +561,7 @@ class ForwardPricingEngine:
         # t: time to maturity(expressed in years, assume act/365 daycounter)
         self.t = (forward.maturity - pricing_date).days / 365
 
-    def npv(self, s: float, r_curve: list, b: float, sigma: float = 0, up_down_p: list = []) -> list:
+    def npv(self, s: float, r_curve: list, b: float, sigma: float=0, up_down_p: list=[]) -> list:
         """
         Calculate the fair value and hedging strategy of forward by rolling back the payoff step by step
         :param s: spot price of the underlying asset (ex-dividend)
@@ -596,7 +598,7 @@ class ForwardPricingEngine:
             for branch in range(time_step + 1):
                 # calculate intrinsic value
 
-                s_t = s * compounding_factor(time_step * delta_t, - b, COMPOUNDING_METHOD) \
+                s_t = s * compounding_factor(time_step * delta_t, -b, COMPOUNDING_METHOD) \
                       * math.pow(up, time_step - branch) * math.pow(down, branch)
 
                 s_t_list.append(s_t)

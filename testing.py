@@ -7,7 +7,7 @@
 @Author: Kim Ki Hyeon, Lu Weikun, Peng Yixin, Zhou Nan
 @Date: 2018/10/25
 @Description：
-@File URL: https://github.com/ppttzhu/MATH548_Project1/import
+@File URL: https://github.com/ppttzhu/MATH548_Project1
 """
 
 from pricingengine import *
@@ -99,6 +99,7 @@ def main():
     npv = []
 
     if is_calculator:
+
         def click():
             global npv
             if product_type.get():
@@ -124,7 +125,7 @@ def main():
                     market_price_today = stock.options_data['lastPrice']
                     market_price_today_print = '%.4f' % market_price_today
                     difference_print = '%.4f' % (npv[0] - market_price_today)
-                except TypeError as te:
+                except TypeError:
                     market_price_today_print = "Not Found"
                     difference_print = "N/A"
 
@@ -144,9 +145,9 @@ def main():
                     q_up_print = "N/A"
                     q_down_print = "N/A"
                 message = 'model price: ' + npv_print + '\nmarket price: ' + market_price_today_print \
-                          + '\n(model-market): ' + difference_print + '\n\nsigma: ' + sigma_print \
-                          + '\n\nup: ' + up_print + '\ndown: ' + down_print \
-                          + '\nq_up: ' + q_up_print + '\nq_down: ' + q_down_print
+                          +'\n(model-market): ' + difference_print + '\n\nsigma: ' + sigma_print \
+                          +'\n\nup: ' + up_print + '\ndown: ' + down_print \
+                          +'\nq_up: ' + q_up_print + '\nq_down: ' + q_down_print
 
             else:
                 option = Option("Calculator", float(strike.get()),
@@ -181,8 +182,8 @@ def main():
                     q_up_print = "N/A"
                     q_down_print = "N/A"
                 message = 'model price: ' + npv_print + '\n\nsigma: ' + sigma_print \
-                          + '\n\nup: ' + up_print + '\ndown: ' + down_print \
-                          + '\nq_up: ' + q_up_print + '\nq_down: ' + q_down_print
+                          +'\n\nup: ' + up_print + '\ndown: ' + down_print \
+                          +'\nq_up: ' + q_up_print + '\nq_down: ' + q_down_print
 
             messagebox.showinfo('Price', message)  # place holder
 

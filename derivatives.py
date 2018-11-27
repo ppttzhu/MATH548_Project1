@@ -7,7 +7,7 @@
 @Author: Kim Ki Hyeon, Lu Weikun, Peng Yixin, Zhou Nan
 @Date: 2018/10/25
 @Description：Include derivatives types such as options and forwards
-@File URL: https://github.com/ppttzhu/MATH548_Project1/import
+@File URL: https://github.com/ppttzhu/MATH548_Project1
 """
 
 from enum import Enum
@@ -25,6 +25,7 @@ class ExerciseType(Enum):
 
 
 class Option:
+
     def __init__(self, product_id: str, strike: float, maturity=datetime, call_put_type=CallPutType,
                  exercise_type=ExerciseType):
         """
@@ -42,6 +43,7 @@ class Option:
 
 
 class Forward:
+
     def __init__(self, product_id: str, strike: float, maturity=datetime):
         """
         :param product_id: the ID of forward
